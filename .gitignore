@@ -4,3 +4,7 @@ out/
 .vscode-test/
 *.vsix
 .env
+
+# Internal implementation plans (never commit)
+PLAN_*.md
+PLAN_OLLAMA_QUOTA_TRACKER.md
