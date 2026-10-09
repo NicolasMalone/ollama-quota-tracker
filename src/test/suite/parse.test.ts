@@ -1,6 +1,15 @@
 import { strict as assert } from "assert";
-import { parseBalanceResponse, parseUsageResponse, pickPrimaryWindow } from "../../providers/parse";
-import { creditsBalance, legacyBalance, usage24h, legacyUsage } from "./fixtures";
+import {
+  parseBalanceResponse,
+  parseUsageResponse,
+  pickPrimaryWindow,
+} from "../../providers/parse";
+import {
+  creditsBalance,
+  legacyBalance,
+  usage24h,
+  legacyUsage,
+} from "./fixtures";
 
 suite("parse", () => {
   test("credits balance → mode credits with percentage remaining", () => {
