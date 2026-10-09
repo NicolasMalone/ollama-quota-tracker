@@ -3,7 +3,7 @@
 Muestra la cuota restante de **Ollama Cloud** en la barra de estado de VS Code.
 
 ```text
-$(cloud) Ollama ██████░░░░ 58%
+$(cloud) Ollama 63%
 ```
 
 > **Nota:** esta extensión no está afiliada a Ollama. Es un proyecto independiente.
@@ -12,8 +12,7 @@ $(cloud) Ollama ██████░░░░ 58%
 
 - Consulta el endpoint documentado de Ollama (`https://ollama.com/api/balance` y `/api/usage`) usando una API Key de `https://ollama.com/settings/keys`.
 - Muestra el **% consumido** (predeterminado) o el **% restante** en la Status Bar, con la opción `ollamaQuota.displayMode`.
-- **Barra de progreso** en la Status Bar y el tooltip, activable/desactivable con `ollamaQuota.showProgress`.
-- Tooltip con detalle: barras por ventana (sesión/semana o créditos), consumido/restante, comprados, reinicios y uso 24h.
+- Tooltip con detalle: porcentajes por ventana (sesión y semana, o créditos), consumido/restante, comprados, reinicios y uso 24h.
 - Refresco automático configurable (por defecto 60 s; 0 = desactivado).
 - Refresco manual haciendo clic en el ítem.
 - Conserva el último valor válido si falla una consulta.
@@ -31,8 +30,7 @@ $(cloud) Ollama ██████░░░░ 58%
 | --- | --- | --- |
 | `ollamaQuota.refreshInterval` | `60` | Intervalo de sondeo en segundos (0 = desactivado). |
 | `ollamaQuota.displayMode` | `used` | Porcentaje mostrado: `used` (consumido) o `remaining` (restante). |
-| `ollamaQuota.showProgress` | `true` | Muestra una barra de progreso en la Status Bar y el tooltip. |
-| `ollamaQuota.warnThreshold` | `20` | Icono ⚠ cuando el % restante sea menor o igual a este valor. |
+| `ollamaQuota.warnThreshold` | `20` | Icono ⚠  cuando el % restante sea menor o igual a este valor. |
 
 ## Privacidad
 
