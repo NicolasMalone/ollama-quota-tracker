@@ -1,0 +1,117 @@
+{
+  "name": "ollama-quota-tracker",
+  "displayName": "Ollama Quota Tracker (Unofficial)",
+  "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar.",
+  "version": "0.2.1",
+  "publisher": "NicolasMalone",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NicolasMalone/ollama-quota-tracker"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ollama",
+    "quota",
+    "cloud",
+    "status bar",
+    "credits"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ollamaQuota.configureApiKey",
+        "title": "Ollama Quota: Configure API Key"
+      },
+      {
+        "command": "ollamaQuota.refresh",
+        "title": "Ollama Quota: Refresh"
+      }
+    ],
+    "configuration": {
+      "title": "Ollama Quota Tracker",
+      "properties": {
+        "ollamaQuota.refreshInterval": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "description": "Polling interval in seconds. 0 disables automatic refresh. Recommended minimum: 60 (Ollama allows 10 requests/minute)."
+        },
+        "ollamaQuota.model": {
+          "type": "string",
+          "default": "glm-5.3-flash",
+          "description": "Ollama model name reserved for future usage analytics."
+        },
+        "ollamaQuota.warnThreshold": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Show a warning icon in the status bar when the remaining quota percentage is at or below this value. 0 disables it."
+        },
+        "ollamaQuota.displayMode": {
+          "type": "string",
+          "enum": [
+            "used",
+            "remaining"
+          ],
+          "enumDescriptions": [
+            "Show the consumed quota percentage (e.g. 58%).",
+            "Show the remaining quota percentage (e.g. 42%)."
+          ],
+          "default": "used",
+          "description": "Quota percentage shown in the status bar: consumed (\"used\") or \"remaining\"."
+        },
+        "ollamaQuota.showProgress": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a progress bar in the status bar and tooltip."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "npm run check-types && node esbuild.config.mjs",
+    "check-types": "tsc --noEmit",
+    "watch": "npm-run-all -p watch:*",
+    "watch:tsc": "tsc --noEmit --watch --preserveWatchOutput",
+    "watch:esbuild": "node esbuild.config.mjs --watch",
+    "pretest": "tsc --outDir out",
+    "test": "node out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/sinon": "^17.0.4",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.0",
+    "chai": "^4.5.0",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.7.4",
+    "npm-run-all": "^4.1.5",
+    "sinon": "^21.0.0",
+    "typescript": "^5.9.0"
+  }
+}

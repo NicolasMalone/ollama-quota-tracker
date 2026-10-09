@@ -1,0 +1,5 @@
+{
+  "ui": "tdd",
+  "require": ["out/test/runTest.js"],
+  "spec": ["out/test/**/*.test.js"]
+}
