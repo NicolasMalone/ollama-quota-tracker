@@ -26,12 +26,6 @@ function getDisplayMode(): "used" | "remaining" {
     .get<"used" | "remaining">("displayMode", "used");
 }
 
-function getShowProgress(): boolean {
-  return vscode.workspace
-    .getConfiguration(SECTION)
-    .get<boolean>("showProgress", true);
-}
-
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -44,7 +38,6 @@ export async function activate(
   const statusBar = new StatusBar({
     getWarnThreshold,
     getDisplayMode,
-    getShowProgress,
   });
   const refreshService = new RefreshService({
     provider,

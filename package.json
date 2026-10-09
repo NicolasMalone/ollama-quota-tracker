@@ -2,7 +2,7 @@
   "name": "ollama-quota-tracker",
   "displayName": "Ollama Quota Tracker (Unofficial)",
   "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "NicolasMalone",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -78,11 +78,6 @@
           ],
           "default": "used",
           "description": "Quota percentage shown in the status bar: consumed (\"used\") or \"remaining\"."
-        },
-        "ollamaQuota.showProgress": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show a progress bar in the status bar and tooltip."
         }
       }
     }
