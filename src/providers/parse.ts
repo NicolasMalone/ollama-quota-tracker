@@ -5,7 +5,12 @@ import type {
   IncludedBalance,
   UsageResponse,
 } from "../types/api";
-import type { QuotaMode, QuotaSnapshot, QuotaWindow, UsageSummary } from "../types/quota";
+import type {
+  QuotaMode,
+  QuotaSnapshot,
+  QuotaWindow,
+  UsageSummary,
+} from "../types/quota";
 
 function clampPercent(n: number): number {
   if (!Number.isFinite(n)) {
@@ -22,9 +27,16 @@ function isIncludedBalance(o: object): o is IncludedBalance {
   return "balance_usd" in o && "allowance_usd" in o && "period" in o;
 }
 
-function makeWindowFromBalance(b: NonNullable<LegacyBalanceLimit | IncludedBalance> & Partial<LegacyBalanceLimit> & Partial<IncludedBalance>): QuotaWindow | undefined {
+function makeWindowFromBalance(
+  b: NonNullable<LegacyBalanceLimit | IncludedBalance> &
+    Partial<LegacyBalanceLimit> &
+    Partial<IncludedBalance>,
+): QuotaWindow | undefined {
   // Legacy: remaining_percent + resets_at — must be a finite number (reject NaN/Infinity)
-  if (typeof b.remaining_percent === "number" && Number.isFinite(b.remaining_percent)) {
+  if (
+    typeof b.remaining_percent === "number" &&
+    Number.isFinite(b.remaining_percent)
+  ) {
     return {
       used: Number.NaN,
       limit: Number.NaN,
@@ -77,14 +89,21 @@ export function parseBalanceResponse(raw: unknown): QuotaSnapshot {
   const snapshot: QuotaSnapshot = {
     ...base,
     purchasedBalanceUsd:
-      typeof body.purchased === "object" && body.purchased !== null && typeof (body.purchased as { balance_usd?: unknown }).balance_usd === "number"
+      typeof body.purchased === "object" &&
+      body.purchased !== null &&
+      typeof (body.purchased as { balance_usd?: unknown }).balance_usd ===
+        "number"
         ? (body.purchased as { balance_usd: number }).balance_usd
         : 0,
   };
   if (isLegacyIncluded(included)) {
     snapshot.mode = "legacy";
-    snapshot.session = makeWindowFromBalance(included.session as unknown as NonNullable<LegacyBalanceLimit>);
-    snapshot.weekly = makeWindowFromBalance(included.weekly as unknown as NonNullable<LegacyBalanceLimit>);
+    snapshot.session = makeWindowFromBalance(
+      included.session as unknown as NonNullable<LegacyBalanceLimit>,
+    );
+    snapshot.weekly = makeWindowFromBalance(
+      included.weekly as unknown as NonNullable<LegacyBalanceLimit>,
+    );
   } else if (isIncludedBalance(included)) {
     snapshot.mode = "credits";
     snapshot.credits = makeWindowFromBalance(included);
@@ -136,7 +155,9 @@ export function parseUsageResponse(raw: unknown): UsageSummary | undefined {
  * - credits mode → the credits window.
  * - legacy mode → the session window (weekly is still shown in the tooltip).
  */
-export function pickPrimaryWindow(snapshot: QuotaSnapshot): QuotaWindow | undefined {
+export function pickPrimaryWindow(
+  snapshot: QuotaSnapshot,
+): QuotaWindow | undefined {
   if (snapshot.mode === "credits") {
     return snapshot.credits;
   }
