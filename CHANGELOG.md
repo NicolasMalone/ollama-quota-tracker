@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 — 2026-10-13
+
+- Se restaura la **barra de progreso** (medidor con codicons `circle-large-filled` / `circle-large-outline`) en los dos sitios, y es la misma barra: junto al % primario en la Status Bar (vistazo rápido) y junto al resumen y a cada línea (sesión, semana o créditos) en el tooltip (vista al pasar el ratón). Codicons elegidos por renderizar idénticos en ambas superficies, a diferencia de los bloques Unicode que se rompen en la fuente proporcional de la status bar.
+
 ## 0.3.0 — 2026-10-09
 
 - Se elimina el indicador de progreso (medidor de codicons en la Status Bar y barras de bloques en el tooltip) y la opción `ollamaQuota.showProgress`. El vistazo rápido queda reducido a los porcentajes: la Status Bar muestra el % primario y el tooltip lista sesión y semana (o créditos) solo con %.

@@ -3,7 +3,7 @@
 Muestra la cuota restante de **Ollama Cloud** en la barra de estado de VS Code.
 
 ```text
-$(cloud) Ollama 63%
+$(cloud) Ollama ●●●○○ 63%
 ```
 
 > **Nota:** esta extensión no está afiliada a Ollama. Es un proyecto independiente.
@@ -12,6 +12,7 @@ $(cloud) Ollama 63%
 
 - Consulta el endpoint documentado de Ollama (`https://ollama.com/api/balance` y `/api/usage`) usando una API Key de `https://ollama.com/settings/keys`.
 - Muestra el **% consumido** (predeterminado) o el **% restante** en la Status Bar, con la opción `ollamaQuota.displayMode`.
+- **Barra de progreso** (medidor de codicons de VS Code) junto al porcentaje, tanto en la Status Bar como en el tooltip.
 - Tooltip con detalle: porcentajes por ventana (sesión y semana, o créditos), consumido/restante, comprados, reinicios y uso 24h.
 - Refresco automático configurable (por defecto 60 s; 0 = desactivado).
 - Refresco manual haciendo clic en el ítem.
