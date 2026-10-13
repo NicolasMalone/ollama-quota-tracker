@@ -104,7 +104,10 @@ export class RefreshService implements vscode.Disposable {
       this.lastNotifiedAuthError = ""; // reset on success so a future auth error notifies again
     } catch (err) {
       const last = this.store.lastSnapshot();
-      if (err instanceof QuotaError && (err.status === 401 || err.status === 403)) {
+      if (
+        err instanceof QuotaError &&
+        (err.status === 401 || err.status === 403)
+      ) {
         // Auth errors are permanent: notify once per distinct message, not every cycle.
         this.store.set({ kind: "error", snapshot: last, message: err.message });
         if (this.lastNotifiedAuthError !== err.message) {
@@ -127,7 +130,8 @@ export class RefreshService implements vscode.Disposable {
   }
 
   private async hasKey(): Promise<boolean> {
-    // OllamaProvider exposes a public hasApiKey(); fall back to true for other providers.
+    // OllamaProvider is the only real provider and exposes a public hasApiKey();
+    // anything else (e.g. test stubs) manages no key, so it is treated as ready.
     if (this.provider instanceof OllamaProvider) {
       return await this.provider.hasApiKey();
     }
