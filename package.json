@@ -2,10 +2,10 @@
   "name": "ollama-quota-tracker",
   "displayName": "Ollama Quota Tracker (Unofficial)",
   "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar.",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "publisher": "NicolasMalone",
   "license": "MIT",
-  "icon": "media/icon.png",
+  "icon": "media/OllamyQT-128.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/NicolasMalone/ollama-quota-tracker"
@@ -90,7 +90,7 @@
     "watch:esbuild": "node esbuild.config.mjs --watch",
     "pretest": "tsc --outDir out",
     "test": "node out/test/runTest.js",
-    "package": "vsce package",
+    "package": "vsce package --out releases/%npm_package_name%-%npm_package_version%.vsix",
     "publish": "vsce publish",
     "vscode:prepublish": "npm run compile"
   },

@@ -135,6 +135,7 @@ function buildTooltip(
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   md.isTrusted = true;
+  md.supportThemeIcons = true;
   md.appendMarkdown(`**Ollama Quota**\n\n`);
   const primary = pickPrimaryWindow(snapshot);
   if (primary !== undefined) {
@@ -238,16 +239,17 @@ function clampPct(n: number): number {
 }
 
 const METER_SEGMENTS = 5;
-// "Large" circle codicons render nearly contiguous, reading as bar segments;
-// the regular circle icons are too small to tell apart in the status bar.
-const METER_FILLED = "$(circle-large-filled)";
-const METER_EMPTY = "$(circle-large-outline)";
+// Symmetric square blocks: ■ filled / □ empty. Unicode geometric shapes;
+// codicon circles were rejected for looking like dots/points.
+const METER_FILLED = "■";
+const METER_EMPTY = "□";
 
 /**
- * Codicon consumption meter shared by the status bar and the tooltip, e.g.
- * ●●●○○ for 60% consumed. Codicons ship with VS Code and render identically
- * in both surfaces, keeping the quick view and the hover view in sync. Each
- * segment covers 100 / segments percent.
+ * Symmetric-block consumption meter shared by the status bar and the
+ * tooltip, e.g. ■■■□□ for 60% consumed. Uses Unicode geometric squares, so
+ * each cell has identical shape/width in both surfaces (the tooltip renders
+ * them inside code spans, where they align in monospace). Each segment
+ * covers 100 / segments percent.
  */
 function buildMeter(consumedPct: number, segments = METER_SEGMENTS): string {
   const filled = Math.round((clampPct(consumedPct) / 100) * segments);

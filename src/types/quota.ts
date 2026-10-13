@@ -1,5 +1,5 @@
 /**
- * Domain model for quota snapshots produced by providers.
+ * Domain model for quota snapshots produced by OllamaProvider.
  * Percentages are always "remaining percent" (0-100) unless stated otherwise.
  */
 

@@ -3,6 +3,7 @@ dist/
 out/
 .vscode-test/
 *.vsix
+releases/
 .env
 
 # Internal implementation plans (never commit)
