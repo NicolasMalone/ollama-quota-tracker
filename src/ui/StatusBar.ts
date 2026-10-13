@@ -15,10 +15,12 @@ const CMD_CONFIGURE = "ollamaQuota.configureApiKey";
 const CMD_REFRESH = "ollamaQuota.refresh";
 
 /**
- * Minimal status bar item: `$(cloud) Ollama 58%` (percent consumed by
- * default). Detailed per-window percentages (session/week or credits) live
- * in the tooltip. Click always triggers a manual refresh (or key setup when
- * no key exists).
+ * Minimal status bar item: `$(cloud) Ollama ●●●○○ 58%` (percent consumed by
+ * default, plus a codicon consumption meter). The same meter is shown in the
+ * tooltip next to each percentage (summary plus session/week or credits).
+ * Codicons render identically in both surfaces, unlike Unicode blocks, which
+ * break in the proportional status bar font. Click always triggers a manual
+ * refresh (or key setup when no key exists).
  */
 export class StatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
@@ -103,7 +105,11 @@ export class StatusBar implements vscode.Disposable {
     const left = Math.round(primary.percentage);
     const showUsed = this.getDisplayMode() === "used";
     const shownPct = showUsed ? Math.round(usedPct) : left;
-    this.setText(`${icon} Ollama ${shownPct}%`);
+    // The meter reflects the displayed quantity: consumed quota in "used"
+    // mode, remaining quota in "remaining" mode, so meter and number agree.
+    this.setText(
+      `${icon} Ollama ${buildMeter(showUsed ? usedPct : left)} ${shownPct}%`,
+    );
     this.item.tooltip = buildTooltip(
       snapshot,
       state_message_placeholder(isError),
@@ -132,14 +138,16 @@ function buildTooltip(
   md.appendMarkdown(`**Ollama Quota**\n\n`);
   const primary = pickPrimaryWindow(snapshot);
   if (primary !== undefined) {
+    const primaryUsed = Math.round(clampPct(100 - primary.percentage));
+    const primaryLeft = Math.round(primary.percentage);
     md.appendMarkdown(
-      `**${Math.round(clampPct(100 - primary.percentage))}% used** · ${Math.round(primary.percentage)}% left\n\n`,
+      `**${primaryUsed}% used** · ${primaryLeft}% left ${buildMeter(primaryUsed)}\n\n`,
     );
   }
   if (snapshot.mode === "credits" && snapshot.credits) {
     const c = snapshot.credits;
     const usedPct = clampPct(100 - c.percentage);
-    md.appendMarkdown(`**Included credits**\n\n`);
+    md.appendMarkdown(`**Included credits** ${buildMeter(usedPct)}\n\n`);
     md.appendMarkdown(
       `Used: $${fmt(c.used)} of $${fmt(c.limit)} (${Math.round(usedPct)}%) · ` +
         `Left: $${fmt(c.remaining)} (${Math.round(c.percentage)}%)\n\n`,
@@ -155,7 +163,9 @@ function buildTooltip(
     if (snapshot.session) {
       const left = Math.round(snapshot.session.percentage);
       const used = Math.round(clampPct(100 - snapshot.session.percentage));
-      md.appendMarkdown(`Session: **${used}% used** · ${left}% left`);
+      md.appendMarkdown(
+        `Session: ${buildMeter(used)} **${used}% used** · ${left}% left`,
+      );
       if (snapshot.session.resetsAt) {
         md.appendMarkdown(
           ` · resets ${escapeMd(formatDate(snapshot.session.resetsAt))}`,
@@ -166,7 +176,9 @@ function buildTooltip(
     if (snapshot.weekly) {
       const left = Math.round(snapshot.weekly.percentage);
       const used = Math.round(clampPct(100 - snapshot.weekly.percentage));
-      md.appendMarkdown(`Week: **${used}% used** · ${left}% left`);
+      md.appendMarkdown(
+        `Week: ${buildMeter(used)} **${used}% used** · ${left}% left`,
+      );
       if (snapshot.weekly.resetsAt) {
         md.appendMarkdown(
           ` · resets ${escapeMd(formatDate(snapshot.weekly.resetsAt))}`,
@@ -223,4 +235,21 @@ function formatDate(iso: string): string {
 
 function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
+}
+
+const METER_SEGMENTS = 5;
+// "Large" circle codicons render nearly contiguous, reading as bar segments;
+// the regular circle icons are too small to tell apart in the status bar.
+const METER_FILLED = "$(circle-large-filled)";
+const METER_EMPTY = "$(circle-large-outline)";
+
+/**
+ * Codicon consumption meter shared by the status bar and the tooltip, e.g.
+ * ●●●○○ for 60% consumed. Codicons ship with VS Code and render identically
+ * in both surfaces, keeping the quick view and the hover view in sync. Each
+ * segment covers 100 / segments percent.
+ */
+function buildMeter(consumedPct: number, segments = METER_SEGMENTS): string {
+  const filled = Math.round((clampPct(consumedPct) / 100) * segments);
+  return METER_FILLED.repeat(filled) + METER_EMPTY.repeat(segments - filled);
 }
