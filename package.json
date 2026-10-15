@@ -107,9 +107,17 @@
     "test": "node out/test/runTest.js",
     "package": "vsce package --out releases/%npm_package_name%-%npm_package_version%.vsix",
     "publish": "vsce publish",
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run --no-ci",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
+    "@semantic-release/github": "^12.0.10",
+    "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
@@ -121,6 +129,7 @@
     "esbuild": "^0.25.0",
     "mocha": "^11.7.4",
     "npm-run-all": "^4.1.5",
+    "semantic-release": "^25.0.9",
     "sinon": "^21.0.0",
     "typescript": "^5.9.0"
   }
