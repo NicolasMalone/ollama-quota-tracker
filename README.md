@@ -12,6 +12,7 @@ $(cloud) Ollama ■■■□□ 63%
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
+- Tooltip timestamps (resets and last update) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
 - **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.
 - Detailed tooltip: percentages per window (session and week, or credits), used/remaining, purchased, resets, and 24h usage.
 - Configurable auto-refresh (60 s by default; 0 = disabled).
@@ -32,6 +33,7 @@ $(cloud) Ollama ■■■□□ 63%
 | `ollamaQuota.refreshInterval` | `60` | Polling interval in seconds (0 = disabled). |
 | `ollamaQuota.displayMode` | `used` | Displayed percentage: `used` (consumed) or `remaining` (left). |
 | `ollamaQuota.warnThreshold` | `20` | ⚠ icon when the remaining % is less than or equal to this value. |
+| `ollamaQuota.tooltipTimeFormat` | `auto` | Hour format of the tooltip timestamps (`auto` = editor locale, or force `12h` / `24h`). |
 
 ## Privacy
 

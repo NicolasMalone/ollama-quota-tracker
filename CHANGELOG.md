@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3 — 2026-10-15
+
+- New `ollamaQuota.tooltipTimeFormat` setting (`auto` / `12h` / `24h`): choose whether the timestamps in the hover tooltip (window resets and the "Updated" line) use a 12-hour or 24-hour clock.
+- Tooltip timestamps are now compact and human-readable, e.g. `Nov 1 at 1:00 AM` (12h) or `Nov 1 at 13:00` (24h); the "Updated" line includes the year (`Nov 1, 2026 at 1:00 AM`). Previously they used the verbose `toLocaleString()` form (e.g. `11/1/2026, 1:00:00 AM`).
+- With the new setting on `12h` / `24h`, the rendering is forced to `en-US` so the output is deterministic; `auto` (default) keeps following the editor locale.
+
 ## 0.4.2 — 2026-10-13
 
 - The progress bar uses **symmetric square blocks** (`■` filled / `□` empty, characters U+25A0/U+25A1), the same string in the Status Bar and in the tooltip (where it renders inside the monospace code block). Replaces the `circle-large-*` codicons from 0.4.1, which still looked like dots/circles.

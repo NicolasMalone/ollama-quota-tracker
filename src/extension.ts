@@ -26,6 +26,12 @@ function getDisplayMode(): "used" | "remaining" {
     .get<"used" | "remaining">("displayMode", "used");
 }
 
+function getTimeFormat(): "auto" | "12h" | "24h" {
+  return vscode.workspace
+    .getConfiguration(SECTION)
+    .get<"auto" | "12h" | "24h">("tooltipTimeFormat", "auto");
+}
+
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -38,6 +44,7 @@ export async function activate(
   const statusBar = new StatusBar({
     getWarnThreshold,
     getDisplayMode,
+    getTimeFormat,
   });
   const refreshService = new RefreshService({
     provider,
@@ -79,7 +86,8 @@ export async function activate(
     }),
   );
 
-  // React to settings changes (interval / threshold) without restarting VS Code.
+  // React to settings changes (interval / threshold / display mode / time
+  // format) without restarting VS Code.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(SECTION)) {
