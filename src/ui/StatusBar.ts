@@ -2,6 +2,11 @@ import * as vscode from "vscode";
 import type { QuotaSnapshot } from "../types/quota";
 import { pickPrimaryWindow } from "../providers/parse";
 import type { RefreshState } from "../services/QuotaStore";
+import {
+  formatLongStamp,
+  formatShortStamp,
+  type TimeFormatSetting,
+} from "./timeFormat";
 
 export type DisplayMode = "used" | "remaining";
 
@@ -9,6 +14,8 @@ export interface StatusBarDeps {
   getWarnThreshold: () => number;
   /** Which quota percentage to display: consumed ("used") or "remaining". */
   getDisplayMode: () => DisplayMode;
+  /** Hour format of the tooltip timestamps (resets and last update). */
+  getTimeFormat: () => TimeFormatSetting;
 }
 
 const CMD_CONFIGURE = "ollamaQuota.configureApiKey";
@@ -26,10 +33,12 @@ export class StatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
   private readonly getWarnThreshold: () => number;
   private readonly getDisplayMode: () => DisplayMode;
+  private readonly getTimeFormat: () => TimeFormatSetting;
 
   constructor(deps: StatusBarDeps, alignmentPriority = 5000) {
     this.getWarnThreshold = deps.getWarnThreshold;
     this.getDisplayMode = deps.getDisplayMode;
+    this.getTimeFormat = deps.getTimeFormat;
     this.item = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
       alignmentPriority,
@@ -94,6 +103,7 @@ export class StatusBar implements vscode.Disposable {
       this.setText("$(cloud) Ollama --");
       this.item.tooltip = buildTooltip(
         snapshot,
+        this.getTimeFormat(),
         state_message_placeholder(isError),
       );
       return;
@@ -112,6 +122,7 @@ export class StatusBar implements vscode.Disposable {
     );
     this.item.tooltip = buildTooltip(
       snapshot,
+      this.getTimeFormat(),
       state_message_placeholder(isError),
     );
   }
@@ -131,6 +142,7 @@ function state_message_placeholder(isError: boolean): string | undefined {
 
 function buildTooltip(
   snapshot: QuotaSnapshot,
+  timeFormat: TimeFormatSetting,
   errorNote?: string,
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
@@ -157,7 +169,9 @@ function buildTooltip(
       `Purchased: $${fmt(snapshot.purchasedBalanceUsd ?? 0)}\n\n`,
     );
     if (c.resetsAt) {
-      md.appendMarkdown(`Resets: ${escapeMd(formatDate(c.resetsAt))}\n\n`);
+      md.appendMarkdown(
+        `Resets: ${escapeMd(formatShortStamp(c.resetsAt, { timeFormat }))}\n\n`,
+      );
     }
   } else if (snapshot.mode === "legacy") {
     md.appendMarkdown(`**Legacy limits**\n\n`);
@@ -169,7 +183,7 @@ function buildTooltip(
       );
       if (snapshot.session.resetsAt) {
         md.appendMarkdown(
-          ` · resets ${escapeMd(formatDate(snapshot.session.resetsAt))}`,
+          ` · resets ${escapeMd(formatShortStamp(snapshot.session.resetsAt, { timeFormat }))}`,
         );
       }
       md.appendMarkdown(`\n\n`);
@@ -182,7 +196,7 @@ function buildTooltip(
       );
       if (snapshot.weekly.resetsAt) {
         md.appendMarkdown(
-          ` · resets ${escapeMd(formatDate(snapshot.weekly.resetsAt))}`,
+          ` · resets ${escapeMd(formatShortStamp(snapshot.weekly.resetsAt, { timeFormat }))}`,
         );
       }
       md.appendMarkdown(`\n\n`);
@@ -202,7 +216,7 @@ function buildTooltip(
     md.appendMarkdown(`⚠️ ${errorNote}\n\n`);
   }
   md.appendMarkdown(
-    `_Updated: ${new Date(snapshot.fetchedAt).toLocaleString()}_\n\n`,
+    `_Updated: ${escapeMd(formatLongStamp(new Date(snapshot.fetchedAt).toISOString(), { timeFormat }))}_\n\n`,
   );
   md.appendMarkdown(
     `[Configure API key](command:${CMD_CONFIGURE}) · [Refresh now](command:${CMD_REFRESH})`,
@@ -224,14 +238,6 @@ function fmt(n: number): string {
 
 function fmtNum(n: number): string {
   return n.toLocaleString();
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return iso;
-  }
-  return d.toLocaleString();
 }
 
 function clampPct(n: number): number {
