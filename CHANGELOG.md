@@ -1,5 +1,17 @@
 # Changelog
 
+# [0.5.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.4.3...v0.5.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **ci:** create releases dir before vsce package in prepareCmd (ENOENT on clean runners) ([dcf69ea](https://github.com/NicolasMalone/ollama-quota-tracker/commit/dcf69eafdcb086ff574ed5f4038caf177bd77342))
+
+
+### Features
+
+* **tooltip:** redesign hover as a spaced GFM table ([5f49e8a](https://github.com/NicolasMalone/ollama-quota-tracker/commit/5f49e8a5d4092103db14888588ee585bfafb60bf))
+
 ## Unreleased
 
 - **Redesigned the hover tooltip as a compact GFM table**: one row per quota window (`Session`, `Week`, or `Credits`) with spaced-out columns for usage, a code-span meter (`■■□□□`), remaining quota and reset time. The `▸` suffix marks the primary window mirrored in the Status Bar, the duplicated summary line and repeated meter are gone, and `Usage 24h` is fused into the footer with the `Updated` timestamp (the table is strictly about quotas; `Purchased` renders as a separate note).
