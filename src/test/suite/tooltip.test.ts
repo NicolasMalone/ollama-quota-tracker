@@ -63,10 +63,8 @@ suite("tooltip — table layout", () => {
       /^\|(&nbsp;){2}Window(&nbsp;){2}\|(&nbsp;){2}Usage(&nbsp;){2}\|(&nbsp;){2}Meter(&nbsp;){2}\|(&nbsp;){2}Remaining(&nbsp;){2}\|(&nbsp;){2}Reset(&nbsp;){2}\|$/,
     );
 
-    // Credits row: primary marker, money usage, meter (40% used → 2/5),
-    // remaining money, reset stamp (form-only: rendered in host TZ).
-    // Cells carry &nbsp; gutters; the Reset cell starts with the wide one
-    // (cell-edge pad + 3 ⇒ 4 consecutive before the stamp).
+    // Credits row: primary marker, money usage, shared meter (40% used →
+    // 2/5 blocks, identical to the status bar), remaining money, reset stamp.
     const row = tableRows[2]!;
     assert.match(row, /Credits ▸/);
     assert.match(row, /\$1\.2 \/ \$3 · 40 %/);
@@ -79,8 +77,17 @@ suite("tooltip — table layout", () => {
     assert.doesNotMatch(md, /\b24h\b/);
     assert.match(
       md,
-      /_Updated .+ · \[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/,
+      /_Updated .+ · \[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/,
     );
+  });
+
+  test("token name renders neutralised in the header when provided", () => {
+    const md = buildTooltipMarkdown(creditsSnapshot(), {
+      timeFormat: "auto",
+      tokenName: "Per|sonal<script>",
+    });
+    // `|`, `<` and `>` become dashes (same rule as any remote text).
+    assert.match(md, /^\*\*Ollama Quota\*\* — Per-sonal-script-\n\n/m);
   });
 
   test("credits: footer fuses 24h usage with Updated", () => {
@@ -102,8 +109,9 @@ suite("tooltip — table layout", () => {
     const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
     assert.equal(tableRows.length, 4, "header + align + 2 data rows");
 
-    // Data cells carry &nbsp; gutters; meters are code spans. Session:
-    // 70% remaining → 30% used → meter 2/5. Week: 80% used → meter 4/5.
+    // Data cells carry &nbsp; gutters; meters are shared status-bar code
+    // spans. Session: 70% remaining → 30% used → 2/5 blocks. Week: 80%
+    // used → 4/5 blocks.
     assert.match(
       tableRows[2]!,
       /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;`■■□□□`&nbsp;\|&nbsp;70 %&nbsp;\|/,
@@ -127,9 +135,9 @@ suite("tooltip — table layout", () => {
   test("error note renders as a warning line", () => {
     const md = buildTooltipMarkdown(creditsSnapshot(), {
       timeFormat: "auto",
-      errorNote: "Last known quota (refresh failed)",
+      errorNote: "Last known quota — refresh failed",
     });
-    assert.match(md, /⚠️ Last known quota \(refresh failed\)/);
+    assert.match(md, /⚠️ Last known quota — refresh failed/);
   });
 
   test("plan suffix renders neutralised (defensive path, remote text)", () => {
@@ -145,8 +153,10 @@ suite("tooltip — sanitising (escapeCell)", () => {
     assert.equal(escapeCell("a|b`c`▸"), "a-b-c--");
   });
 
-  test("backslashes become quotes", () => {
+  test("backslashes, brackets and markdown link/image syntax become quotes", () => {
     assert.equal(escapeCell("a\\b"), "a'b");
+    assert.equal(escapeCell("[x](https://evil.example)"), "'x''https://evil.example'");
+    assert.equal(escapeCell("![img](x)"), "''img''x'");
   });
 
   test("newlines collapse so no cell can forge rows", () => {
@@ -157,6 +167,14 @@ suite("tooltip — sanitising (escapeCell)", () => {
     const stamp = "Nov 1 at 1:00 AM";
     assert.equal(escapeCell(stamp), stamp);
   });
+
+  test("remote text cannot forge a command link in a trusted tooltip", () => {
+    const snapshot = creditsSnapshot({ plan: "[Activate](command:workbench.action.openSettings)" });
+    const md = buildTooltipMarkdown(snapshot, { timeFormat: "auto" });
+    // The tooltip is rendered with isTrusted=true; any link in it must be ours.
+    assert.doesNotMatch(md, /\[Activate\]/);
+    assert.match(md, /'Activate''command:workbench\.action\.openSettings'/);
+  });
 });
 
 suite("tooltip — buildMeter (shared with the status bar)", () => {
@@ -164,5 +182,11 @@ suite("tooltip — buildMeter (shared with the status bar)", () => {
     assert.equal(buildMeter(0), "□□□□□");
     assert.equal(buildMeter(60), "■■■□□");
     assert.equal(buildMeter(100), "■■■■■");
+  });
+
+  test("equals the status bar meter for the same percentage", () => {
+    // Identity contract: the hover meter must match the status bar meter
+    // character by character (33% rounds to 2/5 on both surfaces).
+    assert.equal(buildMeter(33), "■■□□□");
   });
 });
