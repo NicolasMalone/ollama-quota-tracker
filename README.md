@@ -21,7 +21,7 @@ Dashboard (legacy plan — session/weekly meters, with the stale-data note after
 ![Dashboard on the legacy plan with session and weekly meters](media/dashboard-legacy.png)
 
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
-- Tooltip timestamps (resets and last update) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
+- Tooltip and dashboard timestamps (resets, update times, chart labels) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
 - **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.
 - Detailed tooltip: percentages per window (session and week, or credits), used/remaining, purchased, resets, and 24h usage.
 - Configurable auto-refresh (60 s by default; 0 = disabled; values below 30 s are clamped to 30 to protect the rate limit).
@@ -69,7 +69,7 @@ To preview what a push would release without touching anything, run `npm run rel
 
 ## Privacy
 
-- The API key is stored **only** in VS Code's local `SecretStorage`. It is never written to `settings.json`, logs, or telemetry.
+- All API keys are stored **only** in VS Code's local `SecretStorage`. They are never written to `settings.json`, logs, or telemetry.
 - This extension does not collect telemetry or usage data.
 
 ## Disclaimer
