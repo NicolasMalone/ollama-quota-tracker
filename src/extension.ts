@@ -25,7 +25,9 @@ function getIntervalSeconds(): number {
   const floored = Math.max(MIN_INTERVAL_SECONDS, Math.floor(raw));
   if (floored !== raw) {
     // One line in the log channel; no modal nagging for a settings typo.
-    logWarn(`refreshInterval ${raw}s is below the ${MIN_INTERVAL_SECONDS}s floor; using ${floored}s.`);
+    logWarn(
+      `refreshInterval ${raw}s is below the ${MIN_INTERVAL_SECONDS}s floor; using ${floored}s.`,
+    );
   }
   return floored;
 }
