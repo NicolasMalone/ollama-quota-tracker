@@ -2,9 +2,7 @@
 
 Displays your remaining **Ollama Cloud** quota in the VS Code status bar.
 
-```text
-$(cloud) Ollama ■■■□□ 63%
-```
+![Status bar with the Ollama Quota indicator](media/statusbar.png)
 
 > **Note:** this extension is not affiliated with Ollama. It is an independent project, and it tracks **Ollama Cloud quota only** — other AI services are out of scope.
 
@@ -13,6 +11,15 @@ $(cloud) Ollama ■■■□□ 63%
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
 - **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management.
+
+Dashboard (credits plan — meters, week/month usage charts and the token selector):
+
+![Dashboard on the credits plan: included credits meter, active week and active month charts, token selector](media/dashboard-credits.png)
+
+Dashboard (legacy plan — session/weekly meters, with the stale-data note after a failed refresh):
+
+![Dashboard on the legacy plan with session and weekly meters](media/dashboard-legacy.png)
+
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip timestamps (resets and last update) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
 - **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.

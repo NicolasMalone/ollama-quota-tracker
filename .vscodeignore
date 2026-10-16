@@ -20,3 +20,4 @@ PLAN_OLLAMA_QUOTA_TRACKER.md
 .releaserc.json
 .github/**
 media/OllamyQT.png
+media/shot-*.html
