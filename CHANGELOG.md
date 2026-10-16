@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Redesigned the hover tooltip as a compact GFM table**: one row per quota window (`Session`, `Week`, or `Credits`) with spaced-out columns for usage, a code-span meter (`■■□□□`), remaining quota and reset time. The `▸` suffix marks the primary window mirrored in the Status Bar, the duplicated summary line and repeated meter are gone, and `Usage 24h` is fused into the footer with the `Updated` timestamp (the table is strictly about quotas; `Purchased` renders as a separate note).
+
 ## 0.4.3 — 2026-10-15
 
 - New `ollamaQuota.tooltipTimeFormat` setting (`auto` / `12h` / `24h`): choose whether the timestamps in the hover tooltip (window resets and the "Updated" line) use a 12-hour or 24-hour clock.

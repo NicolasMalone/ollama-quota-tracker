@@ -3,10 +3,13 @@ import type { QuotaSnapshot } from "../types/quota";
 import { pickPrimaryWindow } from "../providers/parse";
 import type { RefreshState } from "../services/QuotaStore";
 import {
-  formatLongStamp,
-  formatShortStamp,
-  type TimeFormatSetting,
-} from "./timeFormat";
+  buildMeter,
+  buildTooltipMarkdown,
+  clampPct,
+  CMD_CONFIGURE,
+  CMD_REFRESH,
+} from "./tooltip";
+import type { TimeFormatSetting } from "./timeFormat";
 
 export type DisplayMode = "used" | "remaining";
 
@@ -17,9 +20,6 @@ export interface StatusBarDeps {
   /** Hour format of the tooltip timestamps (resets and last update). */
   getTimeFormat: () => TimeFormatSetting;
 }
-
-const CMD_CONFIGURE = "ollamaQuota.configureApiKey";
-const CMD_REFRESH = "ollamaQuota.refresh";
 
 /**
  * Minimal status bar item: `$(cloud) Ollama ●●●○○ 58%` (percent consumed by
@@ -101,7 +101,7 @@ export class StatusBar implements vscode.Disposable {
     const primary = pickPrimaryWindow(snapshot);
     if (primary === undefined) {
       this.setText("$(cloud) Ollama --");
-      this.item.tooltip = buildTooltip(
+      this.item.tooltip = mdTooltip(
         snapshot,
         this.getTimeFormat(),
         state_message_placeholder(isError),
@@ -120,7 +120,7 @@ export class StatusBar implements vscode.Disposable {
     this.setText(
       `${icon} Ollama ${buildMeter(showUsed ? usedPct : left)} ${shownPct}%`,
     );
-    this.item.tooltip = buildTooltip(
+    this.item.tooltip = mdTooltip(
       snapshot,
       this.getTimeFormat(),
       state_message_placeholder(isError),
@@ -140,124 +140,25 @@ function state_message_placeholder(isError: boolean): string | undefined {
   return isError ? "Last known quota (refresh failed)" : undefined;
 }
 
-function buildTooltip(
+/**
+ * Wraps the pure tooltip markdown (from `ui/tooltip.ts`) into a trusted
+ * `MarkdownString` with theme-icon support. All layout logic lives in the
+ * pure renderer; this wrapper only adapts it to the VS Code API.
+ */
+function mdTooltip(
   snapshot: QuotaSnapshot,
   timeFormat: TimeFormatSetting,
   errorNote?: string,
 ): vscode.MarkdownString {
-  const md = new vscode.MarkdownString();
+  const md = new vscode.MarkdownString(
+    buildTooltipMarkdown(snapshot, { timeFormat, errorNote }),
+  );
   md.isTrusted = true;
   md.supportThemeIcons = true;
-  md.appendMarkdown(`**Ollama Quota**\n\n`);
-  const primary = pickPrimaryWindow(snapshot);
-  if (primary !== undefined) {
-    const primaryUsed = Math.round(clampPct(100 - primary.percentage));
-    const primaryLeft = Math.round(primary.percentage);
-    md.appendMarkdown(
-      `**${primaryUsed}% used** · ${primaryLeft}% left ${buildMeter(primaryUsed)}\n\n`,
-    );
-  }
-  if (snapshot.mode === "credits" && snapshot.credits) {
-    const c = snapshot.credits;
-    const usedPct = clampPct(100 - c.percentage);
-    md.appendMarkdown(`**Included credits** ${buildMeter(usedPct)}\n\n`);
-    md.appendMarkdown(
-      `Used: $${fmt(c.used)} of $${fmt(c.limit)} (${Math.round(usedPct)}%) · ` +
-        `Left: $${fmt(c.remaining)} (${Math.round(c.percentage)}%)\n\n`,
-    );
-    md.appendMarkdown(
-      `Purchased: $${fmt(snapshot.purchasedBalanceUsd ?? 0)}\n\n`,
-    );
-    if (c.resetsAt) {
-      md.appendMarkdown(
-        `Resets: ${escapeMd(formatShortStamp(c.resetsAt, { timeFormat }))}\n\n`,
-      );
-    }
-  } else if (snapshot.mode === "legacy") {
-    md.appendMarkdown(`**Legacy limits**\n\n`);
-    if (snapshot.session) {
-      const left = Math.round(snapshot.session.percentage);
-      const used = Math.round(clampPct(100 - snapshot.session.percentage));
-      md.appendMarkdown(
-        `Session: ${buildMeter(used)} **${used}% used** · ${left}% left`,
-      );
-      if (snapshot.session.resetsAt) {
-        md.appendMarkdown(
-          ` · resets ${escapeMd(formatShortStamp(snapshot.session.resetsAt, { timeFormat }))}`,
-        );
-      }
-      md.appendMarkdown(`\n\n`);
-    }
-    if (snapshot.weekly) {
-      const left = Math.round(snapshot.weekly.percentage);
-      const used = Math.round(clampPct(100 - snapshot.weekly.percentage));
-      md.appendMarkdown(
-        `Week: ${buildMeter(used)} **${used}% used** · ${left}% left`,
-      );
-      if (snapshot.weekly.resetsAt) {
-        md.appendMarkdown(
-          ` · resets ${escapeMd(formatShortStamp(snapshot.weekly.resetsAt, { timeFormat }))}`,
-        );
-      }
-      md.appendMarkdown(`\n\n`);
-    }
-  } else {
-    md.appendMarkdown(`Unknown response shape from the Ollama API.\n\n`);
-  }
-  const usage = snapshot.usageLast24h;
-  if (usage) {
-    md.appendMarkdown(
-      `**Usage 24h** · ${usage.requestCount} requests` +
-        `${usage.usageUsd !== undefined ? ` · $${fmt(usage.usageUsd)}` : ""}` +
-        `${usage.inputTokens !== undefined || usage.outputTokens !== undefined ? ` · ${fmtNum(usage.inputTokens ?? 0)} in / ${fmtNum(usage.outputTokens ?? 0)} out tokens` : ""}\n\n`,
-    );
-  }
-  if (errorNote) {
-    md.appendMarkdown(`⚠️ ${errorNote}\n\n`);
-  }
-  md.appendMarkdown(
-    `_Updated: ${escapeMd(formatLongStamp(new Date(snapshot.fetchedAt).toISOString(), { timeFormat }))}_\n\n`,
-  );
-  md.appendMarkdown(
-    `[Configure API key](command:${CMD_CONFIGURE}) · [Refresh now](command:${CMD_REFRESH})`,
-  );
   return md;
 }
 
 function escapeMd(s: string): string {
   // Neutralise markdown control chars to prevent tooltip content injection.
   return s.replace(/[\\`*_{}\[\]()#+.!<>|~\n\r]/g, " ");
-}
-
-function fmt(n: number): string {
-  if (!Number.isFinite(n)) {
-    return "-";
-  }
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function fmtNum(n: number): string {
-  return n.toLocaleString();
-}
-
-function clampPct(n: number): number {
-  return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
-}
-
-const METER_SEGMENTS = 5;
-// Symmetric square blocks: ■ filled / □ empty. Unicode geometric shapes;
-// codicon circles were rejected for looking like dots/points.
-const METER_FILLED = "■";
-const METER_EMPTY = "□";
-
-/**
- * Symmetric-block consumption meter shared by the status bar and the
- * tooltip, e.g. ■■■□□ for 60% consumed. Uses Unicode geometric squares, so
- * each cell has identical shape/width in both surfaces (the tooltip renders
- * them inside code spans, where they align in monospace). Each segment
- * covers 100 / segments percent.
- */
-function buildMeter(consumedPct: number, segments = METER_SEGMENTS): string {
-  const filled = Math.round((clampPct(consumedPct) / 100) * segments);
-  return METER_FILLED.repeat(filled) + METER_EMPTY.repeat(segments - filled);
 }
