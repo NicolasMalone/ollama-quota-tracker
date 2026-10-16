@@ -1,7 +1,7 @@
 {
   "name": "ollama-quota-tracker",
   "displayName": "Ollama Quota Tracker (Unofficial)",
-  "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar.",
+  "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar, with usage charts and multi-token management in a dashboard.",
   "version": "0.6.0",
   "publisher": "NicolasMalone",
   "license": "MIT",
@@ -91,7 +91,7 @@
             "Force a 24-hour clock, e.g. `Nov 1 at 13:00`."
           ],
           "default": "auto",
-          "description": "Hour format of the timestamps in the hover tooltip: window resets and the last update time."
+          "description": "Hour format of the timestamps in the hover tooltip and the dashboard (resets, update times and chart labels)."
         }
       }
     }
