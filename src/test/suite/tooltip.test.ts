@@ -155,7 +155,10 @@ suite("tooltip — sanitising (escapeCell)", () => {
 
   test("backslashes, brackets and markdown link/image syntax become quotes", () => {
     assert.equal(escapeCell("a\\b"), "a'b");
-    assert.equal(escapeCell("[x](https://evil.example)"), "'x''https://evil.example'");
+    assert.equal(
+      escapeCell("[x](https://evil.example)"),
+      "'x''https://evil.example'",
+    );
     assert.equal(escapeCell("![img](x)"), "''img''x'");
   });
 
@@ -169,7 +172,9 @@ suite("tooltip — sanitising (escapeCell)", () => {
   });
 
   test("remote text cannot forge a command link in a trusted tooltip", () => {
-    const snapshot = creditsSnapshot({ plan: "[Activate](command:workbench.action.openSettings)" });
+    const snapshot = creditsSnapshot({
+      plan: "[Activate](command:workbench.action.openSettings)",
+    });
     const md = buildTooltipMarkdown(snapshot, { timeFormat: "auto" });
     // The tooltip is rendered with isTrusted=true; any link in it must be ours.
     assert.doesNotMatch(md, /\[Activate\]/);
