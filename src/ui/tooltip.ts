@@ -44,11 +44,14 @@ export interface TooltipOptions {
   timeFormat: TimeFormatSetting;
   /** Optional note shown as a warning line (e.g. stale-data note). */
   errorNote?: string;
+  /** Name of the active (named) token, shown in the header when set. */
+  tokenName?: string;
 }
 
 /** Command ids for the footer links (must match extension.ts). */
 export const CMD_CONFIGURE = "ollamaQuota.configureApiKey";
 export const CMD_REFRESH = "ollamaQuota.refresh";
+export const CMD_DASHBOARD = "ollamaQuota.openDashboard";
 
 /* ------------------------------------------------------------------------ */
 /* Cell sanitising + meter                                                   */
@@ -75,15 +78,18 @@ const RESET_PAD = PAD.repeat(3);
 /**
  * Sanitises remote text for inclusion in a GFM table cell: pipes would end
  * the cell early, backticks would open code spans and newlines would forge
- * extra rows. Neutralised by REPLACEMENT (never truncated, never deleted).
- * The `▸` primary marker is stripped from remote text too, so no cell can
- * fake being the primary one. Plain text (e.g. formatted stamps) passes
- * through untouched.
+ * extra rows. Bracket/paren/`!` characters are neutralised too — they are
+ * markdown link/image syntax and the tooltip is published with
+ * `isTrusted = true` (the footer renders `command:` links), so remote text
+ * must never be able to forge a link of its own. Neutralised by REPLACEMENT
+ * (never truncated, never deleted). The `▸` primary marker is stripped from
+ * remote text too, so no cell can fake being the primary one. Plain text
+ * (e.g. formatted stamps) passes through untouched.
  */
 export function escapeCell(s: string): string {
   return s
-    .replace(/[|`▸]/g, "-")
-    .replace(/\\/g, "'")
+    .replace(/[|`▸<>]/g, "-")
+    .replace(/[\\!()[\]]/g, "'")
     .replace(/[\r\n\t]+/g, " ")
     .trim();
 }
@@ -96,8 +102,12 @@ const METER_EMPTY = "□";
 
 /**
  * Symmetric-block consumption meter shared by the status bar and the
- * tooltip, e.g. ■■■□□ for 60% consumed. In the tooltip each meter is
- * rendered inside a code span, where blocks align in monospace.
+ * tooltip, e.g. ■■□□□ for 60% consumed. Both surfaces call the SAME
+ * function with the SAME argument (percent used), so the two meters can
+ * never diverge; in the tooltip each meter is a code span, where the
+ * symmetric ■/□ blocks align in monospace. Fraction blocks ▏▎▍▌█░ were
+ * tried for a dashboard-like bar and render unevenly in hovers — do not
+ * reintroduce them.
  */
 export function buildMeter(
   consumedPct: number,
@@ -122,7 +132,8 @@ export function buildTooltipMarkdown(
   snapshot: QuotaSnapshot,
   opts: TooltipOptions,
 ): string {
-  const parts: string[] = [`**Ollama Quota**${planSuffix(snapshot)}`];
+  const name = opts.tokenName ? ` — ${escapeCell(opts.tokenName)}` : "";
+  const parts: string[] = [`**Ollama Quota**${name}${planSuffix(snapshot)}`];
   const table = buildTable(snapshot, opts);
   if (table) {
     parts.push(table);
@@ -189,6 +200,8 @@ function buildTable(
  * - Legacy windows show percentages only (`30 %` / `70 %`).
  * - `isPrimary` suffixes the name with `▸` (status-bar mirror).
  * - `showMoney` renders the money formatters (credits mode).
+ * - The Meter cell reuses the status-bar meter (buildMeter, percent used),
+ *   rendered as a monospace code span.
  */
 function windowRow(
   name: string,
@@ -221,7 +234,9 @@ function windowRow(
   const cells = [
     label,
     usage,
-    `\`${buildMeter(100 - w.percentage)}\``,
+    // Same builder and same argument as the status bar meter: identity is
+    // guaranteed character by character (33% → ■■□□□ on both surfaces).
+    `\`${buildMeter(usedPct)}\``,
     remaining,
     // Leading gutter INSIDE the (left-aligned) reset cell ⇒ a real gap
     // between the Remaining column and the stamp in every row.
@@ -253,6 +268,7 @@ function footerLine(snapshot: QuotaSnapshot, opts: TooltipOptions): string {
   parts.push(
     `_Updated ${updated} · ` +
       `[Refresh now](command:${CMD_REFRESH}) · ` +
+      `[Dashboard](command:${CMD_DASHBOARD}) · ` +
       `[Configure key](command:${CMD_CONFIGURE})_`,
   );
   return parts.join("\n\n");

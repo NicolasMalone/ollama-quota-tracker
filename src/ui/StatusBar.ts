@@ -7,7 +7,7 @@ import {
   buildTooltipMarkdown,
   clampPct,
   CMD_CONFIGURE,
-  CMD_REFRESH,
+  CMD_DASHBOARD,
 } from "./tooltip";
 import type { TimeFormatSetting } from "./timeFormat";
 
@@ -25,15 +25,15 @@ export interface StatusBarDeps {
  * Minimal status bar item: `$(cloud) Ollama ●●●○○ 58%` (percent consumed by
  * default, plus a codicon consumption meter). The same meter is shown in the
  * tooltip next to each percentage (summary plus session/week or credits).
- * Codicons render identically in both surfaces, unlike Unicode blocks, which
- * break in the proportional status bar font. Click always triggers a manual
- * refresh (or key setup when no key exists).
+ * Click opens the Dashboard (or token setup when no token exists); manual
+ * refresh remains available as a command and inside the dashboard.
  */
 export class StatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
   private readonly getWarnThreshold: () => number;
   private readonly getDisplayMode: () => DisplayMode;
   private readonly getTimeFormat: () => TimeFormatSetting;
+  private lastTokenName: string | undefined;
 
   constructor(deps: StatusBarDeps, alignmentPriority = 5000) {
     this.getWarnThreshold = deps.getWarnThreshold;
@@ -44,7 +44,7 @@ export class StatusBar implements vscode.Disposable {
       alignmentPriority,
     );
     this.item.name = "Ollama Quota";
-    this.item.command = CMD_REFRESH;
+    this.item.command = CMD_DASHBOARD;
     this.item.text = "$(sync~spin) Ollama…";
     this.item.tooltip = "Ollama Quota Tracker";
     this.item.show();
@@ -52,39 +52,33 @@ export class StatusBar implements vscode.Disposable {
 
   /** Re-renders the item from the store state. */
   render(state: RefreshState): void {
+    const tokenName = state.activeToken?.name;
+    if (tokenName) {
+      this.lastTokenName = tokenName;
+    }
     switch (state.kind) {
       case "idle":
+      case "loading":
         if (!state.keyPresent) {
           this.setText("$(cloud) Ollama —");
           this.item.command = CMD_CONFIGURE;
           this.item.tooltip = new vscode.MarkdownString(
-            "Ollama Quota Tracker\n\nNo API key configured. \n[Configure API key](command:" +
+            "Ollama Quota Tracker\n\nNo API token configured. \n[Configure API key](command:" +
               CMD_CONFIGURE +
               ")",
           );
         } else {
           this.setText("$(sync~spin) Ollama…");
-          this.item.command = CMD_REFRESH;
-          this.item.tooltip = "Ollama Quota Tracker\nRefreshing…";
-        }
-        break;
-      case "loading":
-        if (!state.keyPresent) {
-          this.setText("$(cloud) Ollama —");
-          this.item.command = CMD_CONFIGURE;
-          this.item.tooltip = "Ollama Quota Tracker\nNo API key configured.";
-        } else {
-          this.setText("$(sync~spin) Ollama…");
-          this.item.command = CMD_REFRESH;
+          this.item.command = CMD_DASHBOARD;
           this.item.tooltip = "Ollama Quota Tracker\nRefreshing…";
         }
         break;
       case "ok":
-        this.item.command = CMD_REFRESH;
+        this.item.command = CMD_DASHBOARD;
         this.renderSnapshot(state.snapshot, false);
         break;
       case "error":
-        this.item.command = CMD_REFRESH;
+        this.item.command = CMD_DASHBOARD;
         if (state.snapshot) {
           this.renderSnapshot(state.snapshot, true);
         } else {
@@ -104,7 +98,7 @@ export class StatusBar implements vscode.Disposable {
       this.item.tooltip = mdTooltip(
         snapshot,
         this.getTimeFormat(),
-        state_message_placeholder(isError),
+        staleNote(isError),
       );
       return;
     }
@@ -123,7 +117,8 @@ export class StatusBar implements vscode.Disposable {
     this.item.tooltip = mdTooltip(
       snapshot,
       this.getTimeFormat(),
-      state_message_placeholder(isError),
+      staleNote(isError),
+      this.lastTokenName,
     );
   }
 
@@ -136,8 +131,10 @@ export class StatusBar implements vscode.Disposable {
   }
 }
 
-function state_message_placeholder(isError: boolean): string | undefined {
-  return isError ? "Last known quota (refresh failed)" : undefined;
+function staleNote(isError: boolean): string | undefined {
+  // No parentheses: the note goes through escapeCell in the tooltip, which
+  // neutralises link/paren chars — keep it punctuation-light on purpose.
+  return isError ? "Last known quota — refresh failed" : undefined;
 }
 
 /**
@@ -149,9 +146,10 @@ function mdTooltip(
   snapshot: QuotaSnapshot,
   timeFormat: TimeFormatSetting,
   errorNote?: string,
+  tokenName?: string,
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString(
-    buildTooltipMarkdown(snapshot, { timeFormat, errorNote }),
+    buildTooltipMarkdown(snapshot, { timeFormat, errorNote, tokenName }),
   );
   md.isTrusted = true;
   md.supportThemeIcons = true;
@@ -159,6 +157,7 @@ function mdTooltip(
 }
 
 function escapeMd(s: string): string {
-  // Neutralise markdown control chars to prevent tooltip content injection.
+  // Neutralise markdown control chars AND link/image syntax: the tooltip is
+  // trusted, only our own footer may render actionable markup.
   return s.replace(/[\\`*_{}\[\]()#+.!<>|~\n\r]/g, " ");
 }
