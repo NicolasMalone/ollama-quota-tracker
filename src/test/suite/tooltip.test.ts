@@ -1,13 +1,11 @@
 import { strict as assert } from "assert";
-import {
-  buildTooltipMarkdown,
-  buildMeter,
-  escapeCell,
-} from "../../ui/tooltip";
+import { buildTooltipMarkdown, buildMeter, escapeCell } from "../../ui/tooltip";
 import type { QuotaSnapshot } from "../../types/quota";
 
 /** Builds a credits-mode snapshot (percentages are REMAINING percent). */
-function creditsSnapshot(overrides: Partial<QuotaSnapshot> = {}): QuotaSnapshot {
+function creditsSnapshot(
+  overrides: Partial<QuotaSnapshot> = {},
+): QuotaSnapshot {
   return {
     provider: "ollama",
     mode: "credits",
@@ -56,9 +54,7 @@ suite("tooltip — table layout", () => {
     assert.match(md, /^\*\*Ollama Quota\*\*\n\n/);
 
     // One header row + one align row + one data row.
-    const tableRows = md
-      .split("\n")
-      .filter((l) => l.startsWith("|"));
+    const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
     assert.equal(tableRows.length, 3, "header + align + 1 data row");
 
     // Header labels, separated by &nbsp; gutters.
@@ -103,15 +99,19 @@ suite("tooltip — table layout", () => {
 
   test("legacy: session primary (▸), week follows, percentage columns", () => {
     const md = buildTooltipMarkdown(legacySnapshot(), { timeFormat: "12h" });
-    const tableRows = md
-      .split("\n")
-      .filter((l) => l.startsWith("|"));
+    const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
     assert.equal(tableRows.length, 4, "header + align + 2 data rows");
 
     // Data cells carry &nbsp; gutters; meters are code spans. Session:
     // 70% remaining → 30% used → meter 2/5. Week: 80% used → meter 4/5.
-    assert.match(tableRows[2]!, /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;`■■□□□`&nbsp;\|&nbsp;70 %&nbsp;\|/);
-    assert.match(tableRows[3]!, /&nbsp;Week&nbsp;\|&nbsp;80 %&nbsp;\|&nbsp;`■■■■□`&nbsp;\|&nbsp;20 %&nbsp;\|/);
+    assert.match(
+      tableRows[2]!,
+      /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;`■■□□□`&nbsp;\|&nbsp;70 %&nbsp;\|/,
+    );
+    assert.match(
+      tableRows[3]!,
+      /&nbsp;Week&nbsp;\|&nbsp;80 %&nbsp;\|&nbsp;`■■■■□`&nbsp;\|&nbsp;20 %&nbsp;\|/,
+    );
   });
 
   test("unknown mode: no table, message and footer only", () => {
@@ -146,7 +146,7 @@ suite("tooltip — sanitising (escapeCell)", () => {
   });
 
   test("backslashes become quotes", () => {
-    assert.equal(escapeCell('a\\b'), "a'b");
+    assert.equal(escapeCell("a\\b"), "a'b");
   });
 
   test("newlines collapse so no cell can forge rows", () => {
