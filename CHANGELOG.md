@@ -1,5 +1,18 @@
 # Changelog
 
+# [0.6.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.5.0...v0.6.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **tooltip:** neutralise markdown link syntax in escapeCell ([fca1916](https://github.com/NicolasMalone/ollama-quota-tracker/commit/fca19165ab869c8ea8ba3dea2fda1a3f39635f31))
+
+
+### Features
+
+* **dashboard:** webview dashboard with multi-token support ([d759723](https://github.com/NicolasMalone/ollama-quota-tracker/commit/d7597233538576036a206a3506e72e68c69dd05f))
+* **settings:** floor refreshInterval at 30s and sync dashboard ([b622254](https://github.com/NicolasMalone/ollama-quota-tracker/commit/b622254d2c84117df69af3bc7db5a34f6cdd95f1))
+
 ## Unreleased (0.6.0)
 
 - **Dashboard webview**: a full dashboard panel (opened from the status bar or the `Ollama Quota: Open Dashboard` command) with quota meters for session/week/credits, usage bar charts for the active week and month, and the same data as ollama.com's "Cloud usage" page.
