@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## Unreleased (0.6.0)
 
+- **Dashboard webview**: a full dashboard panel (opened from the status bar or the `Ollama Quota: Open Dashboard` command) with quota meters for session/week/credits, usage bar charts for the active week and month, and the same data as ollama.com's "Cloud usage" page.
+- **Multiple API tokens**: manage any number of named keys ("Personal", "Work", …) stored in VS Code's secret storage; switch the active one from the dashboard or the `Ollama Quota: Manage API Keys` command. The legacy single key migrates automatically to a "Default" token.
+- The scheduled refresh polls **only the active token**, so the shared rate limit (10 requests/minute across all keys) is not burned by idle tokens.
+- Quota data is never shown across tokens: when the active token changes, the stale snapshot of the previous token is discarded instead of mislabeled.
+- Hardened the hover tooltip against markdown-link injection: remote text (token names, plan names, messages) can no longer forge links or command links even though the tooltip is rendered as trusted markdown.
 - Removed the unused `ollamaQuota.model` setting ("Ollama model name reserved for future usage analytics"); it served no purpose yet and could confuse users.
+- `refreshInterval` values below 30 seconds are clamped to 30 to protect the rate limit (0 still disables polling); settings changes now re-render the open dashboard immediately.
+- Published VSIX bundles are minified and the package slimmed (release tooling and the oversized source icon are no longer bundled; ~800 KB lighter).
+- Release workflow runs with least-privilege permissions and pinned, immutable action versions.
 
 # [0.5.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.4.3...v0.5.0) (2026-10-16)
 

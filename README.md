@@ -12,25 +12,26 @@ $(cloud) Ollama ■■■□□ 63%
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
+- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management.
+- **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip timestamps (resets and last update) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
 - **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.
 - Detailed tooltip: percentages per window (session and week, or credits), used/remaining, purchased, resets, and 24h usage.
-- Configurable auto-refresh (60 s by default; 0 = disabled).
-- Manual refresh by clicking the item.
-- Keeps the last valid value if a query fails.
+- Configurable auto-refresh (60 s by default; 0 = disabled; values below 30 s are clamped to 30 to protect the rate limit).
+- Keeps the last valid value if a query fails (per token: stale data from a previous token is never shown for the current one).
 
 ## Usage
 
 1. Install the extension.
 2. Create an API key at `https://ollama.com/settings/keys`.
-3. Run the `Ollama Quota: Configure API Key` command.
-4. Your quota will appear in the Status Bar.
+3. Run the `Ollama Quota: Manage API Keys` command (or click the status bar item without a token) to add your first key.
+4. Your quota appears in the Status Bar; click it to open the Dashboard, where you can add/rename/delete tokens, switch the active one and view the weekly/monthly usage charts.
 
 ## Configuration
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `ollamaQuota.refreshInterval` | `60` | Polling interval in seconds (0 = disabled). |
+| `ollamaQuota.refreshInterval` | `60` | Polling interval in seconds (0 = disabled; values below 30 are clamped to 30 to protect the shared rate limit). |
 | `ollamaQuota.displayMode` | `used` | Displayed percentage: `used` (consumed) or `remaining` (left). |
 | `ollamaQuota.warnThreshold` | `20` | ⚠ icon when the remaining % is less than or equal to this value. |
 | `ollamaQuota.tooltipTimeFormat` | `auto` | Hour format of the tooltip timestamps (`auto` = editor locale, or force `12h` / `24h`). |
