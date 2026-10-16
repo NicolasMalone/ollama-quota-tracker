@@ -160,11 +160,17 @@ function buildTable(
 ): string | undefined {
   const rows: string[] = [];
   if (snapshot.mode === "credits" && snapshot.credits) {
-    rows.push(windowRow("Credits", snapshot.credits, true, opts.timeFormat, true));
+    rows.push(
+      windowRow("Credits", snapshot.credits, true, opts.timeFormat, true),
+    );
   } else if (snapshot.mode === "legacy" && snapshot.session) {
-    rows.push(windowRow("Session", snapshot.session, true, opts.timeFormat, false));
+    rows.push(
+      windowRow("Session", snapshot.session, true, opts.timeFormat, false),
+    );
     if (snapshot.weekly) {
-      rows.push(windowRow("Week", snapshot.weekly, false, opts.timeFormat, false));
+      rows.push(
+        windowRow("Week", snapshot.weekly, false, opts.timeFormat, false),
+      );
     }
   }
   if (rows.length === 0) {
@@ -233,10 +239,7 @@ function purchasedNote(snapshot: QuotaSnapshot): string | undefined {
 }
 
 /** Footer: 24h usage (if any) + updated stamp + the two command links. */
-function footerLine(
-  snapshot: QuotaSnapshot,
-  opts: TooltipOptions,
-): string {
+function footerLine(snapshot: QuotaSnapshot, opts: TooltipOptions): string {
   const usage = snapshot.usageLast24h;
   const parts: string[] = [];
   if (usage) {
