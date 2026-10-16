@@ -2,16 +2,38 @@ import * as vscode from "vscode";
 import { OllamaProvider } from "./providers/OllamaProvider";
 import { QuotaStore } from "./services/QuotaStore";
 import { RefreshService } from "./services/RefreshService";
+import { TokenStore, type TokenMeta } from "./services/TokenStore";
 import { StatusBar } from "./ui/StatusBar";
+import { Dashboard } from "./ui/Dashboard";
+import { promptAddToken } from "./ui/tokenFlow";
 import { OutputChannel } from "./OutputChannel";
 
 const SECTION = "ollamaQuota";
+
+/** Lowest polling interval we tolerate (seconds); protects the 10 req/min
+ * API budget shared across all of the user's keys. 0 keeps "disabled". */
+const MIN_INTERVAL_SECONDS = 30;
 
 function getIntervalSeconds(): number {
   const raw = vscode.workspace
     .getConfiguration(SECTION)
     .get<number>("refreshInterval", 60);
-  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return 0; // disabled
+  }
+  // Floor instead of rejection: honour intent while protecting the quota.
+  const floored = Math.max(MIN_INTERVAL_SECONDS, Math.floor(raw));
+  if (floored !== raw) {
+    // One line in the log channel; no modal nagging for a settings typo.
+    logWarn(`refreshInterval ${raw}s is below the ${MIN_INTERVAL_SECONDS}s floor; using ${floored}s.`);
+  }
+  return floored;
+}
+
+/** Pre-activation log sink: the real OutputChannel takes over later. */
+let activityLog: ((message: string) => void) | undefined;
+function logWarn(message: string): void {
+  activityLog?.(message);
 }
 
 function getWarnThreshold(): number {
@@ -36,11 +58,13 @@ export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   const log = new OutputChannel("Ollama Quota");
-  const provider = new OllamaProvider({
-    secrets: context.secrets,
-    log: (m) => log.info(m),
-  });
+  activityLog = (message) => log.info(message);
+  const provider = new OllamaProvider({ log: (m) => log.info(m) });
   const store = new QuotaStore();
+  const tokens = new TokenStore({
+    secrets: context.secrets,
+    globalState: context.globalState,
+  });
   const statusBar = new StatusBar({
     getWarnThreshold,
     getDisplayMode,
@@ -49,37 +73,49 @@ export async function activate(
   const refreshService = new RefreshService({
     provider,
     store,
+    tokens,
     getIntervalSeconds,
     log: (m) => log.info(m),
   });
+  const dashboard = new Dashboard({
+    tokens,
+    provider,
+    getStoreState: () => store.get(),
+    getTimeFormat,
+    refreshNow: () => refreshService.refreshNow(),
+    log: (m) => log.info(m),
+  });
+
+  // One-time migration: the legacy single key becomes the "Default" token.
+  await tokens.migrateFromLegacy();
 
   // UI wiring
   context.subscriptions.push(
-    store.onDidChange((state) => statusBar.render(state)),
+    store.onDidChange((state) => {
+      statusBar.render(state);
+      dashboard.syncWithState(state);
+    }),
+    tokens.onDidChangeActive(() => {
+      void refreshService.refreshNow(); // active token changed: refresh it now
+    }),
     statusBar,
+    dashboard,
+    tokens,
     log,
   );
 
   // Commands
   context.subscriptions.push(
     vscode.commands.registerCommand("ollamaQuota.configureApiKey", async () => {
-      const key = await vscode.window.showInputBox({
-        prompt:
-          "Enter your Ollama API key (created at https://ollama.com/settings/keys)",
-        password: true,
-        ignoreFocusOut: true,
-        placeHolder: "sk-...",
-      });
-      if (!key || key.trim().length === 0) {
-        return;
-      }
-      await provider.setApiKey(key);
-      await refreshService.refreshNow();
+      await manageTokens(tokens, refreshService, dashboard);
+    }),
+    vscode.commands.registerCommand("ollamaQuota.openDashboard", () => {
+      dashboard.open();
     }),
     vscode.commands.registerCommand("ollamaQuota.refresh", async () => {
-      const hasKey = await provider.hasApiKey();
-      if (!hasKey) {
-        await vscode.commands.executeCommand("ollamaQuota.configureApiKey");
+      const hasTokens = await tokens.hasAny();
+      if (!hasTokens) {
+        await manageTokens(tokens, refreshService, dashboard);
         return;
       }
       void refreshService.refreshNow();
@@ -92,6 +128,7 @@ export async function activate(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(SECTION)) {
         statusBar.render(store.get()); // re-render immediately for display-only settings
+        dashboard.syncWithState(store.get()); // panel re-renders too (e.g. timeFormat)
         refreshService.restart();
       }
     }),
@@ -100,6 +137,59 @@ export async function activate(
   // Start
   refreshService.restart(); // schedule according to current settings
   refreshService.start(); // immediate first refresh
+}
+
+/** QuickPick-driven token management (command fallback without the panel). */
+async function manageTokens(
+  tokens: TokenStore,
+  refreshService: RefreshService,
+  dashboard: Dashboard,
+): Promise<void> {
+  const ADD = "$(add) Add token…";
+  const OPEN = "$(dashboard) Open dashboard";
+  while (true) {
+    const all = await tokens.list();
+    const active = tokens.getActiveId();
+    const items: (vscode.QuickPickItem & {
+      action?: string;
+      meta?: TokenMeta;
+    })[] = [
+      { label: ADD, action: "add" },
+      ...(all.length
+        ? all.map((t) => ({
+            label: `${t.id === active ? "$(circle-filled) " : "$(circle-large-outline) "}${t.name}`,
+            action: "pick",
+            meta: t,
+          }))
+        : []),
+      { label: OPEN, action: "open" },
+    ];
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: "Manage Ollama API tokens — select one to activate it",
+      ignoreFocusOut: true,
+    });
+    if (!pick) {
+      return;
+    }
+    if (pick.action === "add") {
+      const meta = await promptAddToken((name, key) => tokens.add(name, key));
+      if (meta) {
+        await tokens.setActive(meta.id);
+        await refreshService.refreshNow();
+      }
+      continue;
+    }
+    if (pick.action === "open") {
+      dashboard.open();
+      return;
+    }
+    if (pick.action === "pick" && pick.meta) {
+      if (pick.meta.id !== tokens.getActiveId()) {
+        await tokens.setActive(pick.meta.id); // refreshNow fires via onDidChangeActive
+      }
+      return;
+    }
+  }
 }
 
 export function deactivate(): void {
