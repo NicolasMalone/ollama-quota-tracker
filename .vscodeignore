@@ -16,3 +16,7 @@ PLAN_OLLAMA_QUOTA_TRACKER.md
 **/*.ts
 **/*.mts
 **/*.map
+# Release tooling and repo assets not needed inside the VSIX
+.releaserc.json
+.github/**
+media/OllamyQT.png
