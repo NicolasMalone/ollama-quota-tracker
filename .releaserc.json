@@ -30,8 +30,9 @@
       {
         "assets": [
           {
-            "path": "releases/ollama-quota-tracker-${nextRelease.version}.vsix",
-            "label": "Extension VSIX (install with code --install-extension)"
+            "path": "releases/*.vsix",
+            "name": "ollama-quota-tracker-${nextRelease.version}.vsix",
+            "label": "Extension VSIX (install with: code --install-extension <file>)"
           }
         ],
         "successComment": false,
