@@ -2,7 +2,7 @@
   "name": "ollama-quota-tracker",
   "displayName": "Ollama Quota Tracker (Unofficial)",
   "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "NicolasMalone",
   "license": "MIT",
   "icon": "media/OllamyQT-128.png",
@@ -38,7 +38,11 @@
     "commands": [
       {
         "command": "ollamaQuota.configureApiKey",
-        "title": "Ollama Quota: Configure API Key"
+        "title": "Ollama Quota: Manage API Keys"
+      },
+      {
+        "command": "ollamaQuota.openDashboard",
+        "title": "Ollama Quota: Open Dashboard"
       },
       {
         "command": "ollamaQuota.refresh",
@@ -52,12 +56,7 @@
           "type": "number",
           "default": 60,
           "minimum": 0,
-          "description": "Polling interval in seconds. 0 disables automatic refresh. Recommended minimum: 60 (Ollama allows 10 requests/minute)."
-        },
-        "ollamaQuota.model": {
-          "type": "string",
-          "default": "glm-5.3-flash",
-          "description": "Ollama model name reserved for future usage analytics."
+          "description": "Polling interval in seconds. 0 disables automatic refresh. Values below 30 are clamped to 30 to protect the shared rate limit (10 requests/minute)."
         },
         "ollamaQuota.warnThreshold": {
           "type": "number",
@@ -109,7 +108,7 @@
     "publish": "vsce publish",
     "release": "semantic-release",
     "release:dry": "semantic-release --dry-run --no-ci",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run check-types && node esbuild.config.mjs --production"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^7.0.0",

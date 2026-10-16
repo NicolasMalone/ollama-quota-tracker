@@ -2,6 +2,7 @@ import { strict as assert } from "assert";
 import {
   parseBalanceResponse,
   parseUsageResponse,
+  parseUsageHistory,
   pickPrimaryWindow,
 } from "../../providers/parse";
 import {
@@ -9,6 +10,8 @@ import {
   legacyBalance,
   usage24h,
   legacyUsage,
+  usage30d,
+  legacyUsage30d,
 } from "./fixtures";
 
 suite("parse", () => {
@@ -111,5 +114,36 @@ suite("parse", () => {
   test("usage unknown payload → undefined", () => {
     assert.equal(parseUsageResponse(null), undefined);
     assert.equal(parseUsageResponse({ totals: {} }), undefined);
+  });
+
+  test("usage history: totals + valid day buckets, malformed dropped", () => {
+    const history = parseUsageHistory(usage30d);
+    assert.ok(history, "usage history should parse");
+    assert.equal(history!.totals.requestCount, 2400);
+    assert.equal(history!.from, "2026-09-09T00:00:00Z");
+    assert.equal(history!.until, "2026-10-16T02:30:00Z");
+    // All fixture buckets are valid → 8 day buckets parsed.
+    assert.equal(history!.days.length, 8);
+    assert.ok(history!.days.every((d) => d.requestCount >= 0));
+    // Last bucket is today's partial one.
+    const last = history!.days[history!.days.length - 1]!;
+    assert.equal(last.partial, true);
+    assert.equal(last.requestCount, 404);
+  });
+
+  test("usage history: legacy totals (no cost/tokens) still parse", () => {
+    const history = parseUsageHistory(legacyUsage30d);
+    assert.ok(history);
+    assert.equal(history!.totals.requestCount, 90);
+    assert.equal(history!.totals.usageUsd, undefined);
+    assert.equal(history!.days.length, 1);
+    assert.equal(history!.days[0]!.usageUsd, undefined);
+    assert.equal(history!.days[0]!.partial, false);
+  });
+
+  test("usage history: unknown payload → undefined", () => {
+    assert.equal(parseUsageHistory(null), undefined);
+    assert.equal(parseUsageHistory({ totals: {} }), undefined);
+    assert.equal(parseUsageHistory(undefined), undefined);
   });
 });

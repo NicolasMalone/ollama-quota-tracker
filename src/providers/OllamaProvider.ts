@@ -1,58 +1,36 @@
-import * as vscode from "vscode";
-import { Provider } from "./Provider";
-import { parseBalanceResponse, parseUsageResponse } from "./parse";
+import { Provider, type UsageHistoryProvider } from "./Provider";
+import {
+  parseBalanceResponse,
+  parseUsageHistory,
+  parseUsageResponse,
+} from "./parse";
 import { QuotaError } from "../types/quota";
-import type { QuotaSnapshot, UsageSummary } from "../types/quota";
+import type { QuotaSnapshot, UsageHistory, UsageSummary } from "../types/quota";
 
 const BALANCE_URL = "https://ollama.com/api/balance";
 const USAGE_URL_24H = "https://ollama.com/api/usage?range=24h";
+const USAGE_URL_30D = "https://ollama.com/api/usage?range=30d";
 
 export interface OllamaProviderDeps {
-  secrets: vscode.SecretStorage;
   log?: (message: string) => void;
 }
 
 /**
  * Provider for Ollama Cloud quota.
- * Calls the documented endpoints:
+ * Calls the documented endpoints (the caller supplies the Bearer key, taken
+ * from the TokenStore):
  *   GET https://ollama.com/api/balance  (included + purchased credits, or legacy limits)
  *   GET https://ollama.com/api/usage?range=24h  (best-effort usage summary for the tooltip)
+ *   GET https://ollama.com/api/usage?range=30d  (day buckets for the dashboard charts)
  */
-export class OllamaProvider implements Provider {
-  private readonly secrets: vscode.SecretStorage;
+export class OllamaProvider implements Provider, UsageHistoryProvider {
   private readonly log: (message: string) => void;
-  private static readonly KEY_NAME = "ollamaQuota.apiKey";
 
   constructor(deps: OllamaProviderDeps) {
-    this.secrets = deps.secrets;
     this.log = deps.log ?? (() => undefined);
   }
 
-  /** True when an API key is configured. */
-  async hasApiKey(): Promise<boolean> {
-    const key = await this.secrets.get(OllamaProvider.KEY_NAME);
-    return typeof key === "string" && key.length > 0;
-  }
-
-  async setApiKey(key: string): Promise<void> {
-    const trimmed = key.trim();
-    if (trimmed.length === 0) {
-      throw new Error("Empty API key");
-    }
-    await this.secrets.store(OllamaProvider.KEY_NAME, trimmed);
-  }
-
-  async clearApiKey(): Promise<void> {
-    await this.secrets.delete(OllamaProvider.KEY_NAME);
-  }
-
-  async getApiKey(): Promise<string | undefined> {
-    const key = await this.secrets.get(OllamaProvider.KEY_NAME);
-    return typeof key === "string" && key.length > 0 ? key : undefined;
-  }
-
-  async getQuota(signal?: AbortSignal): Promise<QuotaSnapshot> {
-    const apiKey = await this.getApiKey();
+  async getQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
     if (!apiKey) {
       throw new QuotaError("API key not configured");
     }
@@ -65,13 +43,40 @@ export class OllamaProvider implements Provider {
     } catch (err) {
       // Usage is best-effort: keep balance snapshot, log technical detail only.
       const status = err instanceof QuotaError ? err.status : undefined;
-      this.log(`Usage endpoint failed${status ? ` (HTTP ${status})` : ""}. Keeping balance-only tooltip.`);
+      this.log(
+        `Usage endpoint failed${status ? ` (HTTP ${status})` : ""}. Keeping balance-only tooltip.`,
+      );
     }
     return balanceSnapshot;
   }
 
+  /** GET /api/usage?range=30d for the dashboard charts (week + month). */
+  async getUsageHistory(
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<UsageHistory> {
+    if (!apiKey) {
+      throw new QuotaError("API key not configured");
+    }
+    const res = await this.requestJson(USAGE_URL_30D, apiKey, signal);
+    if (res.ok) {
+      const body = await safeJson(res);
+      const history = parseUsageHistory(body);
+      // Defensive: a 200 response whose body fails validation is surfaced as
+      // an error so the dashboard can show the failure note.
+      if (history) {
+        return history;
+      }
+      throw new QuotaError("Unrecognised usage history response");
+    }
+    throw httpError(res);
+  }
+
   /** GET /api/balance with a 15s timeout merged into the caller's signal. */
-  private async fetchAndParseBalance(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
+  private async fetchAndParseBalance(
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<QuotaSnapshot> {
     const res = await this.requestJson(BALANCE_URL, apiKey, signal);
     if (res.ok) {
       const body = await safeJson(res);
@@ -82,7 +87,10 @@ export class OllamaProvider implements Provider {
   }
 
   /** GET /api/usage?range=24h; returns undefined if the body is not usable. */
-  private async fetchUsage(apiKey: string, signal?: AbortSignal): Promise<UsageSummary | undefined> {
+  private async fetchUsage(
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<UsageSummary | undefined> {
     const res = await this.requestJson(USAGE_URL_24H, apiKey, signal);
     if (res.ok) {
       const body = await safeJson(res);
@@ -91,7 +99,11 @@ export class OllamaProvider implements Provider {
     throw httpError(res);
   }
 
-  private async requestJson(url: string, apiKey: string, signal?: AbortSignal): Promise<Response> {
+  private async requestJson(
+    url: string,
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     if (signal?.aborted) {
       throw new QuotaError("Request aborted before start");
     }
@@ -102,7 +114,10 @@ export class OllamaProvider implements Provider {
     try {
       const res = await fetch(url, {
         method: "GET",
-        headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
         signal: controller.signal,
         redirect: "error", // never follow redirects: prevents leaking the Bearer key to another origin
       });
@@ -118,7 +133,9 @@ export class OllamaProvider implements Provider {
       if (err instanceof Error && err.name === "AbortError") {
         throw new QuotaError("Request timed out (15s)");
       }
-      throw new QuotaError(`Network error: ${err instanceof Error ? err.message : "unknown"}`);
+      throw new QuotaError(
+        `Network error: ${err instanceof Error ? err.message : "unknown"}`,
+      );
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abortCombined);

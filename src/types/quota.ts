@@ -37,6 +37,31 @@ export interface UsageSummary {
   until?: string;
 }
 
+/** One day bucket of a usage response (`/api/usage`). */
+export interface UsagePoint {
+  from: string;
+  until: string;
+  /** True when the day is still in progress (today's bucket). */
+  partial?: boolean;
+  requestCount: number;
+  usageUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/**
+ * Aggregated day-by-day usage of `/api/usage?range=30d`. The dashboard slices
+ * it into the active week and active month client-side, so one fetch feeds
+ * both charts.
+ */
+export interface UsageHistory {
+  from: string;
+  until: string;
+  totals: UsageSummary;
+  /** Day buckets in chronological order (oldest first). */
+  days: UsagePoint[];
+}
+
 /** Thrown by OllamaProvider on HTTP errors, network failures or timeouts. */
 export class QuotaError extends Error {
   readonly status?: number;

@@ -1,12 +1,13 @@
 import * as vscode from "vscode";
 import { QuotaError } from "../types/quota";
 import type { Provider } from "../providers/Provider";
-import { OllamaProvider } from "../providers/OllamaProvider";
-import { QuotaStore } from "./QuotaStore";
+import { QuotaStore, type ActiveTokenMeta } from "./QuotaStore";
+import type { TokenStore } from "./TokenStore";
 
 export interface RefreshServiceDeps {
   provider: Provider;
   store: QuotaStore;
+  tokens: TokenStore;
   getIntervalSeconds: () => number;
   log?: (message: string) => void;
 }
@@ -18,6 +19,7 @@ export interface RefreshServiceDeps {
 export class RefreshService implements vscode.Disposable {
   private readonly provider: Provider;
   private readonly store: QuotaStore;
+  private readonly tokens: TokenStore;
   private readonly getIntervalSeconds: () => number;
   private readonly log: (message: string) => void;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -28,6 +30,7 @@ export class RefreshService implements vscode.Disposable {
   constructor(deps: RefreshServiceDeps) {
     this.provider = deps.provider;
     this.store = deps.store;
+    this.tokens = deps.tokens;
     this.getIntervalSeconds = deps.getIntervalSeconds;
     this.log = deps.log ?? (() => undefined);
   }
@@ -87,18 +90,27 @@ export class RefreshService implements vscode.Disposable {
       this.log("Refresh skipped: a request is already in flight.");
       return false;
     }
-    const keyPresent = await this.hasKey();
-    if (!keyPresent) {
+    // Only the active token is polled: the API rate limit (10 req/min) is
+    // shared by the user across ALL their API keys, so refreshing every
+    // stored token would burn shared quota for data nobody is watching.
+    const active = await this.tokens.getActive();
+    const activeToken: ActiveTokenMeta | undefined = active
+      ? { id: active.id, name: active.name }
+      : undefined;
+    if (!active) {
       this.store.set({ kind: "idle", keyPresent: false });
       return false;
     }
     const controller = new AbortController();
     this.inFlight = controller;
-    this.store.set({ kind: "loading", keyPresent: true });
+    this.store.set({ kind: "loading", keyPresent: true, activeToken });
     let ok = false;
     try {
-      const snapshot = await this.provider.getQuota(controller.signal);
-      this.store.set({ kind: "ok", snapshot });
+      const snapshot = await this.provider.getQuota(
+        active.key,
+        controller.signal,
+      );
+      this.store.set({ kind: "ok", snapshot, activeToken });
       ok = true;
       this.lastDelayMs = undefined;
       this.lastNotifiedAuthError = ""; // reset on success so a future auth error notifies again
@@ -109,14 +121,19 @@ export class RefreshService implements vscode.Disposable {
         (err.status === 401 || err.status === 403)
       ) {
         // Auth errors are permanent: notify once per distinct message, not every cycle.
-        this.store.set({ kind: "error", snapshot: last, message: err.message });
+        this.store.set({
+          kind: "error",
+          snapshot: last,
+          message: err.message,
+          activeToken,
+        });
         if (this.lastNotifiedAuthError !== err.message) {
           this.lastNotifiedAuthError = err.message;
           void vscode.window.showErrorMessage(`Ollama Quota: ${err.message}`);
         }
       } else {
         const message = err instanceof Error ? err.message : "Unknown error";
-        this.store.set({ kind: "error", snapshot: last, message });
+        this.store.set({ kind: "error", snapshot: last, message, activeToken });
       }
       // Honour Retry-After for 429 as the next schedule interval.
       if (err instanceof QuotaError && err.retryAfterSeconds) {
@@ -127,15 +144,6 @@ export class RefreshService implements vscode.Disposable {
       this.inFlight = undefined;
     }
     return ok;
-  }
-
-  private async hasKey(): Promise<boolean> {
-    // OllamaProvider is the only real provider and exposes a public hasApiKey();
-    // anything else (e.g. test stubs) manages no key, so it is treated as ready.
-    if (this.provider instanceof OllamaProvider) {
-      return await this.provider.hasApiKey();
-    }
-    return true;
   }
 
   private clearTimer(): void {

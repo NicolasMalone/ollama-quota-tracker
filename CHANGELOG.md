@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Removed the unused `ollamaQuota.model` setting ("Ollama model name reserved for future usage analytics"); it served no purpose yet and could confuse users.
+
 # [0.5.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.4.3...v0.5.0) (2026-10-16)
 
 

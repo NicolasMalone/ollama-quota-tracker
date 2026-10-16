@@ -9,6 +9,8 @@ import type {
   QuotaMode,
   QuotaSnapshot,
   QuotaWindow,
+  UsageHistory,
+  UsagePoint,
   UsageSummary,
 } from "../types/quota";
 
@@ -148,6 +150,68 @@ export function parseUsageResponse(raw: unknown): UsageSummary | undefined {
     summary.outputTokens = outputTokens;
   }
   return summary;
+}
+
+/**
+ * Parses the raw payload of `/api/usage?range=30d` into a UsageHistory for
+ * the dashboard charts. Tolerant by design: buckets which fail validation
+ * are dropped without invalidating the rest; the function only returns
+ * undefined when there is no usable totals block (same rule as 24h usage).
+ */
+export function parseUsageHistory(raw: unknown): UsageHistory | undefined {
+  const totals = parseUsageResponse(raw);
+  if (!totals) {
+    return undefined;
+  }
+  const body = (
+    typeof raw === "object" && raw !== null ? raw : {}
+  ) as Partial<UsageResponse>;
+  const days = Array.isArray(body.buckets)
+    ? body.buckets
+        .map(parseBucket)
+        .filter((b): b is UsagePoint => b !== undefined)
+    : [];
+  return {
+    from: typeof body.from === "string" ? body.from : (totals.from ?? ""),
+    until: typeof body.until === "string" ? body.until : (totals.until ?? ""),
+    totals,
+    days,
+  };
+}
+
+/** Parses one day bucket; returns undefined for malformed entries. */
+function parseBucket(bucket: unknown): UsagePoint | undefined {
+  if (typeof bucket !== "object" || bucket === null) {
+    return undefined;
+  }
+  const o = bucket as Record<string, unknown>;
+  if (typeof o.from !== "string" || typeof o.until !== "string") {
+    return undefined;
+  }
+  const requestCount = o.request_count;
+  if (
+    typeof requestCount !== "number" ||
+    !Number.isFinite(requestCount) ||
+    requestCount < 0
+  ) {
+    return undefined;
+  }
+  const point: UsagePoint = {
+    from: o.from,
+    until: o.until,
+    partial: o.partial === true,
+    requestCount,
+  };
+  if (typeof o.usage_usd === "number" && Number.isFinite(o.usage_usd)) {
+    point.usageUsd = o.usage_usd;
+  }
+  if (typeof o.input_tokens === "number" && Number.isFinite(o.input_tokens)) {
+    point.inputTokens = o.input_tokens;
+  }
+  if (typeof o.output_tokens === "number" && Number.isFinite(o.output_tokens)) {
+    point.outputTokens = o.output_tokens;
+  }
+  return point;
 }
 
 /**
