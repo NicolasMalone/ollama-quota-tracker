@@ -15,7 +15,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "mkdir -p releases && vsce package --out releases/ollama-quota-tracker-${nextRelease.version}.vsix"
+        "prepareCmd": "mkdir -p releases && vsce package --out releases/ollama-quota-tracker-${nextRelease.version}.vsix",
+        "publishCmd": "if [ -n \"$VSCE_PAT\" ]; then vsce publish --packagePath releases/ollama-quota-tracker-${nextRelease.version}.vsix; else echo 'Skipping marketplace publish (VSCE_PAT secret not set)'; fi"
       }
     ],
     [

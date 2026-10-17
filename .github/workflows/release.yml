@@ -44,4 +44,9 @@ jobs:
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Personal Access Token for the VS Code Marketplace publish step
+          # (vsce publish inside @semantic-release/exec). Optional: if not
+          # set, the pipeline skips the marketplace publish and only creates
+          # the GitHub Release with the VSIX attached.
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx semantic-release
