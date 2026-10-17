@@ -13,7 +13,7 @@
 * **dashboard:** webview dashboard with multi-token support ([d759723](https://github.com/NicolasMalone/ollama-quota-tracker/commit/d7597233538576036a206a3506e72e68c69dd05f))
 * **settings:** floor refreshInterval at 30s and sync dashboard ([b622254](https://github.com/NicolasMalone/ollama-quota-tracker/commit/b622254d2c84117df69af3bc7db5a34f6cdd95f1))
 
-## Unreleased (0.6.0)
+### 0.6.0 — detailed notes
 
 - **Dashboard webview**: a full dashboard panel (opened from the status bar or the `Ollama Quota: Open Dashboard` command) with quota meters for session/week/credits, usage bar charts for the active week and month, and the same data as ollama.com's "Cloud usage" page.
 - **Multiple API tokens**: manage any number of named keys ("Personal", "Work", …) stored in VS Code's secret storage; switch the active one from the dashboard or the `Ollama Quota: Manage API Keys` command. The legacy single key migrates automatically to a "Default" token.
