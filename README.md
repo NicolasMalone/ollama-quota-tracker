@@ -63,10 +63,13 @@ Supported commit prefixes:
 | --- | --- | --- |
 | `fix: ...` | patch | `0.4.3 → 0.4.4` |
 | `feat: ...` | minor | `0.4.3 → 0.5.0` |
+| `docs: ...` | patch | `0.6.0 → 0.6.1`² |
 | `feat!:` or `BREAKING CHANGE:` in the body | major | `0.4.3 → 1.0.0`¹ |
-| anything else (`chore:`, `docs:`, `refactor:`, …) | none (no release) | — |
+| anything else (`chore:`, `ci:`, `style:`, `refactor:`, …) | none (no release) | — |
 
 ¹ While the version is `0.x`, a *major* bump stays in the `0.x` series.
+
+² `docs:` releases a patch because the `README.md` bundled in the VSIX is the Marketplace listing — documentation changes need a new version to become visible there.
 
 To preview what a push would release without touching anything, run `npm run release:dry`.
 
