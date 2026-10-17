@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.1](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.0...v0.6.1) (2026-10-17)
+
+### Bug Fixes
+
+* **release:** publish docs commits as marketplace patches ([0065937](https://github.com/NicolasMalone/ollama-quota-tracker/commit/006593725a65d7095210e0ac4321a559c6f84835))
+
+### Documentation
+
+* document marketplace publish step and de-sync fix ([c38c042](https://github.com/NicolasMalone/ollama-quota-tracker/commit/c38c04290cf40e813bbd3b599152b9eb767aa925))
+
 # [0.6.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.5.0...v0.6.0) (2026-10-16)
 
 
