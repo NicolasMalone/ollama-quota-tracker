@@ -49,8 +49,11 @@ Releases are automated with **[semantic-release](https://semantic-release.org)**
 
 1. bumps the version in `package.json`,
 2. appends the new entry to `CHANGELOG.md` (generated from the commit messages),
-3. builds the VSIX,
-4. pushes the `vX.Y.Z` tag and publishes a **GitHub Release** with the VSIX attached.
+3. builds the VSIX, bundling the repo's `README.md` and `CHANGELOG.md` — these feed the Marketplace listing and its changelog tab,
+4. publishes that exact VSIX to the **VS Code Marketplace** (requires the `VSCE_PAT` repository secret; skipped with a warning if it is not set),
+5. pushes the `vX.Y.Z` tag and publishes a **GitHub Release** with the VSIX attached.
+
+Marketplace publishing uses a Personal Access Token with the **Marketplace "Manage" scope** (all accessible organizations), stored as the `VSCE_PAT` repository secret. Note that a version already published to the Marketplace can never be overwritten, so the listing (README, screenshots, changelog tab…) only refreshes on each new release.
 
 The release commit (`chore(release): X.Y.Z [skip ci]`) is created by the bot itself, so no version has to be bumped manually anymore.
 
