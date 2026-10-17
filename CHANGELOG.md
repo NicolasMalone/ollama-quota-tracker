@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.2](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.1...v0.6.2) (2026-10-17)
+
+### Documentation
+
+* note the VSCE_PAT preflight in the release section ([dbd705d](https://github.com/NicolasMalone/ollama-quota-tracker/commit/dbd705d602b9153cf0d6b61a58f15c8294ce608a))
+
 ## [0.6.1](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.0...v0.6.1) (2026-10-17)
 
 ### Bug Fixes

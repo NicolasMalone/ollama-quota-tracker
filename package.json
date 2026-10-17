@@ -2,7 +2,7 @@
   "name": "ollama-quota-tracker",
   "displayName": "Ollama Quota Tracker (Unofficial)",
   "description": "Shows your Ollama Cloud quota (included credits or legacy limits) in the VS Code status bar, with usage charts and multi-token management in a dashboard.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "publisher": "NicolasMalone",
   "license": "MIT",
   "icon": "media/OllamyQT-128.png",
