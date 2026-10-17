@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.3](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.2...v0.6.3) (2026-10-17)
+
+### Bug Fixes
+
+* **release:** remove bash-only parameter expansion from publishCmd ([006fdaa](https://github.com/NicolasMalone/ollama-quota-tracker/commit/006fdaa0194c3735248841102cb6cb99aa3cee54))
+
 ## [0.6.2](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.1...v0.6.2) (2026-10-17)
 
 ### Documentation
