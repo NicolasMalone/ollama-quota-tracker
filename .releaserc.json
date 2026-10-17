@@ -38,7 +38,7 @@
       "@semantic-release/exec",
       {
         "prepareCmd": "mkdir -p releases && vsce package --out releases/ollama-quota-tracker-${nextRelease.version}.vsix",
-        "publishCmd": "echo \"publish step: VSCE_PAT is ${VSCE_PAT:+set}${VSCE_PAT:-EMPTY}\"; if [ -n \"$VSCE_PAT\" ]; then vsce publish --packagePath releases/ollama-quota-tracker-${nextRelease.version}.vsix; else echo '::error::VSCE_PAT not set — cannot publish to the Marketplace' && exit 1; fi"
+        "publishCmd": "if [ -n \"$VSCE_PAT\" ]; then echo 'Publishing to the VS Code Marketplace...'; vsce publish --packagePath releases/ollama-quota-tracker-${nextRelease.version}.vsix; else echo '::error::VSCE_PAT secret is not set — cannot publish to the Marketplace' && exit 1; fi"
       }
     ],
     [
