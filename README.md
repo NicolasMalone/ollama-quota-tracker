@@ -53,7 +53,7 @@ Releases are automated with **[semantic-release](https://semantic-release.org)**
 4. publishes that exact VSIX to the **VS Code Marketplace** (requires the `VSCE_PAT` repository secret; skipped with a warning if it is not set),
 5. pushes the `vX.Y.Z` tag and publishes a **GitHub Release** with the VSIX attached.
 
-Marketplace publishing uses a Personal Access Token with the **Marketplace "Manage" scope** (all accessible organizations), stored as the `VSCE_PAT` repository secret. Note that a version already published to the Marketplace can never be overwritten, so the listing (README, screenshots, changelog tab…) only refreshes on each new release.
+Marketplace publishing uses a Personal Access Token with the **Marketplace "Manage" scope** (all accessible organizations), stored as the `VSCE_PAT` repository secret. The workflow pre-flights the secret before releasing: if `VSCE_PAT` is missing or empty, the run fails with an actionable error instead of silently publishing only to GitHub Releases. Note that a version already published to the Marketplace can never be overwritten, so the listing (README, screenshots, changelog tab…) only refreshes on each new release.
 
 The release commit (`chore(release): X.Y.Z [skip ci]`) is created by the bot itself, so no version has to be bumped manually anymore.
 
