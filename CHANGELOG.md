@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.4...v0.7.0) (2026-10-19)
+
+### Features
+
+* **dashboard:** responsive chart layout in narrow webviews ([2d46ff3](https://github.com/NicolasMalone/ollama-quota-tracker/commit/2d46ff3451dc95bdca659fd1da9a5bb51b3a3645))
+
 ## [0.6.4](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.3...v0.6.4) (2026-10-19)
 
 ### Bug Fixes
