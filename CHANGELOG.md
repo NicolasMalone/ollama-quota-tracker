@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.4](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.3...v0.6.4) (2026-10-19)
+
+### Bug Fixes
+
+* **dashboard:** keep tallest chart bar on the shared baseline ([7290560](https://github.com/NicolasMalone/ollama-quota-tracker/commit/7290560ccf486ef62019ef41116dea1a9c7b7938))
+
 ## [0.6.3](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.2...v0.6.3) (2026-10-17)
 
 ### Bug Fixes
