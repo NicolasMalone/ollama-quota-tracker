@@ -328,7 +328,10 @@ export function usageSlices(
   const week = sliceOf(history.days, windows.weekFrom, windows.until);
   if (week) {
     slices.push({
-      title: `Active week (${windows.weekLabel})`,
+      // `week`/`month` read unambiguous at chart width and ellipsize less
+      // than "Active …" when the panel gets narrow (title stays left, the
+      // summary right).
+      title: `Week (${windows.weekLabel})`,
       summary: summaryOf(week.days),
       days: week.days,
     });
@@ -336,7 +339,7 @@ export function usageSlices(
   const month = sliceOf(history.days, windows.monthFrom, windows.until);
   if (month) {
     slices.push({
-      title: `Active month (${windows.monthLabel})`,
+      title: `Month (${windows.monthLabel})`,
       summary: summaryOf(month.days),
       days: month.days,
     });
@@ -361,12 +364,13 @@ function historyWindows(
   const now = new Date(nowMs);
   const until = history.until || new Date(nowMs).toISOString();
 
-  // Start of the ACTIVE week: last Monday 00:00 LOCAL time. If the weekly
-  // limit resets this week (its timestamp falls between Monday and now),
-  // the chart starts there instead — matching what the weekly meter counts.
+  // Start of the ACTIVE week: last Monday. The API buckets are UTC-aligned
+  // days, so the anchor is pinned to 00:00 of that UTC day: a local midnight
+  // that falls inside the previous UTC day would otherwise drop the Monday
+  // bucket from the chart while the label still counted it.
   const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setUTCHours(0, 0, 0, 0);
+  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
   let weekFromMs = monday.getTime();
   const weeklyReset = opts.snapshot?.weekly?.resetsAt;
   if (weeklyReset) {
@@ -379,14 +383,21 @@ function historyWindows(
       windowStart > weekFromMs &&
       windowStart <= nowMs
     ) {
-      weekFromMs = windowStart;
+      // Buckets are whole UTC days: if the true window start falls inside
+      // today, anchor at today's 00:00 UTC instead — floor-ing to the
+      // containing bucket keeps today's column in the chart (with a strict
+      // mid-day start the filter would drop it and the chart would vanish).
+      const startDay = new Date(windowStart);
+      startDay.setUTCHours(0, 0, 0, 0);
+      weekFromMs = Math.max(weekFromMs, startDay.getTime());
     }
   }
 
-  // Start of the ACTIVE month: the 1st, 00:00 LOCAL time.
+  // Start of the ACTIVE month: the 1st, 00:00 UTC (same UTC-day rule as the
+  // week, so both charts start exactly on a bucket boundary).
   const first = new Date(now);
-  first.setHours(0, 0, 0, 0);
-  first.setDate(1);
+  first.setUTCHours(0, 0, 0, 0);
+  first.setUTCDate(1);
 
   return {
     weekFrom: weekFromMs,
@@ -459,6 +470,10 @@ function summaryOf(days: UsagePoint[]): string {
  * window's busiest day) resolves its percentage against the whole column,
  * overflows past the baseline and gets pushed below the other bars — so the
  * track is what keeps every column's fill bottom-aligned to the same line.
+ *
+ * Responsiveness: columns shrink with the panel (flex + min-width:0); long
+ * windows also mark the chart `data-days` + `.dense` so the dense-label CSS
+ * (every other / fourth tick on narrow panels) keeps it readable.
  */
 function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
   if (days.length === 0) {
@@ -478,7 +493,12 @@ function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
       return `<div class="day-col${partial}" title="${title}"><div class="day-track"><div class="day-fill" data-h="${hPct}"></div></div><span class="day-label">${escapeHtml(label)}</span></div>`;
     })
     .join("\n");
-  return `<div class="days">${bars}</div>`;
+  // data-days mirrors the count into CSS (attr() can't feed a selector):
+  // from 15 buckets the chart gets the `.dense` label-thinning treatment.
+  const dense = days.length >= 15 ? " dense" : "";
+  // The width lives in data-w/data-h and is applied by the nonce-protected
+  // script (VS Code webviews strip inline style attributes in markup).
+  return `<div class="days${dense}" data-days="${days.length}">${bars}</div>`;
 }
 
 /** Day label of a bucket, e.g. `Oct 4`; today's partial bucket says today. */
@@ -524,39 +544,56 @@ function buildStyles(): string {
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 16px 20px 40px;
+  margin: 0; padding: 16px clamp(12px, 3vw, 20px) 40px;
   font-family: var(--vscode-font-family, sans-serif);
   font-size: var(--vscode-font-size, 13px);
   color: var(--vscode-foreground, #ccc);
   background: var(--vscode-editor-background, #1e1e1e);
 }
-.wrap { max-width: 860px; margin: 0 auto; }
-.page-head h1 { font-size: 20px; margin: 0; font-weight: 600; }
-.head-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.page-head .sub { margin: 0 0 18px; opacity: .75; }
+.wrap { width: 100%; min-width: 0; max-width: 860px; margin: 0 auto; }
+.page-head h1 { font-size: clamp(17px, 2.4vw, 20px); margin: 0; font-weight: 600; }
+.head-row { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.page-head .sub { margin: 0 0 18px; opacity: .75; overflow-wrap: anywhere; }
 .card {
   border: 1px solid var(--vscode-panel-border, #333);
   border-radius: 6px; padding: 14px 16px; margin: 0 0 14px;
   background: var(--vscode-editorWidget-background, rgba(128,128,128,.08));
+  min-width: 0; overflow: hidden;
 }
 .meter-row + .meter-row { margin-top: 16px; }
-.meter-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.meter-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; row-gap: 2px; min-width: 0; }
 .meter-title { font-weight: 600; }
-.meter-pct { opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Card titles/right labels wrap to a second line instead of clipping when
+   the panel is narrow; right-aligned keeps the reading column consistent. */
+.meter-pct { opacity: .9; text-align: right; overflow-wrap: anywhere; }
 .bar {
   height: 8px; border-radius: 4px; margin: 6px 0 4px;
   background: rgba(128,128,128,.25); overflow: hidden;
 }
 .fill { height: 100%; width: 0; border-radius: 4px; background: var(--vscode-charts-blue, #4aa3ff); }
-.meter-sub { opacity: .7; font-size: 12px; }
-.days { display: flex; align-items: flex-end; gap: 6px; height: 120px; margin-top: 14px; }
-.day-col { flex: 1; height: 100%; display: flex; flex-direction: column; }
+.meter-sub { opacity: .7; font-size: 12px; overflow-wrap: anywhere; }
+/* Fluid: gap and chart height scale with the panel width. */
+.days { display: flex; align-items: flex-end; gap: clamp(2px, .8vw, 6px); height: clamp(72px, 18vw, 120px); margin-top: 14px; }
+/* min-width: 0 drops the column's implicit min-content floor (the nowrap
+   label width), so any window length fits inside the card at any panel
+   width; the labels shrink and ellipsize within their column. */
+.day-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; }
 /* Track = column minus the label row; caps bars so 100% can't overflow. */
-.day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; width: 100%; }
 .day-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--vscode-charts-blue, #4aa3ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
 .day-col.partial .day-fill { opacity: .45; }
-.day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
-.tokens-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* Dense charts (15+ buckets) thin their ticks only while the panel is too
+   narrow to carry one label (≈40px) per column; visibility (not display)
+   keeps every column equally wide. "today" always stays visible. */
+@media (max-width: 780px) {
+  .days.dense .day-col:not(:nth-child(2n)) .day-label { visibility: hidden; }
+}
+@media (max-width: 440px) {
+  .days.dense .day-col:not(:nth-child(4n + 1)) .day-label { visibility: hidden; }
+}
+.days.dense .day-col.partial .day-label { visibility: visible; }
+.tokens-head { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .tokens-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 select, .btn {
   font-family: inherit; font-size: inherit; color: inherit;
@@ -564,6 +601,7 @@ select, .btn {
   border: 1px solid var(--vscode-dropdown-border, #444);
   border-radius: 4px; padding: 4px 10px;
 }
+select { max-width: 100%; }
 .btn:hover { background: var(--vscode-list-hoverBackground, #333); cursor: pointer; }
 .btn.danger { color: var(--vscode-errorForeground, #f66); }
 .muted { opacity: .65; }

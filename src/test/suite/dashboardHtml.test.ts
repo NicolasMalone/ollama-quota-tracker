@@ -7,7 +7,7 @@ import {
   MSG_SELECT_TOKEN,
 } from "../../ui/dashboardHtml";
 import { parseBalanceResponse, parseUsageHistory } from "../../providers/parse";
-import type { QuotaSnapshot } from "../../types/quota";
+import type { QuotaSnapshot, UsagePoint } from "../../types/quota";
 import { creditsBalance, legacyBalance, usage30d } from "./fixtures";
 
 const NONCE = "abc123";
@@ -96,10 +96,10 @@ suite("dashboardHtml", () => {
       now: Date.parse("2026-10-16T12:00:00Z"), // Friday Oct 16
       nonce: NONCE,
     });
-    assert.match(html, /Active week \(Oct 12 – Oct 16\)/);
+    assert.match(html, /Week \(Oct 12 – Oct 16\)/);
     // Active week = 200+340+0+560+404 = 1504 requests.
     assert.match(html, /1,504 requests/);
-    assert.match(html, /Active month \(Oct 1 – Oct 16\)/);
+    assert.match(html, /Month \(Oct 1 – Oct 16\)/);
     // Active month = week (1504) + Oct 1 (120) + Oct 4 (160) = 1784.
     assert.match(html, /1,784 requests/);
     // Week chart: 5 day columns; month chart: 7 → 12 columns overall.
@@ -109,10 +109,41 @@ suite("dashboardHtml", () => {
     // Bars are data-attribute measured, applied by the script (CSP-safe).
     assert.match(html, /class="day-track"><div class="day-fill" data-h="100"/);
     assert.doesNotMatch(html, /style="height:/);
+    // Responsive: each chart mirrors its bucket count for the dense-label
+    // CSS (week=5, month=7 with this fixture → both stay non-dense).
+    assert.match(html, /class="days" data-days="5"/);
+    assert.match(html, /class="days" data-days="7"/);
     assert.match(
       html,
       /el\.style\.width = el\.getAttribute\('data-w'\) \+ '%'/,
     );
+  });
+
+  test("long month charts go dense: data-days carries the thinning class", () => {
+    // Synthetic month of 20 UTC days → 20 columns ≥ the dense threshold.
+    const days: UsagePoint[] = Array.from({ length: 20 }, (_, i) => ({
+      from: new Date(Date.UTC(2026, 9, 1 + i)).toISOString(),
+      until: new Date(Date.UTC(2026, 9, 2 + i)).toISOString(),
+      requestCount: 10 + (i % 5) * 5,
+      partial: i === 19,
+    }));
+    const history = {
+      from: days[0].from,
+      until: days[19].until,
+      totals: { requestCount: 300 },
+      days,
+    };
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-20T12:00:00Z"),
+      nonce: NONCE,
+    });
+    assert.match(html, /class="days dense" data-days="20"/);
+    // The thinning CSS ships with the document; the partial "today" tick
+    // always stays visible.
+    assert.match(html, /\.days\.dense \.day-col\.partial/);
   });
 
   test("token names are escaped (XSS-safe)", () => {
