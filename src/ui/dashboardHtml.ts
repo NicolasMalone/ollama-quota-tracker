@@ -451,7 +451,15 @@ function summaryOf(days: UsagePoint[]): string {
   return parts.join(" · ");
 }
 
-/** Pure CSS bar chart of daily request counts (no remote assets). */
+/**
+ * Pure CSS bar chart of daily request counts (no remote assets).
+ *
+ * The measured height lives on `.day-fill`, which sits inside a `.day-track`
+ * area that excludes the label row. Without the track, a 100% bar (the
+ * window's busiest day) resolves its percentage against the whole column,
+ * overflows past the baseline and gets pushed below the other bars — so the
+ * track is what keeps every column's fill bottom-aligned to the same line.
+ */
 function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
   if (days.length === 0) {
     return `<p class="muted">No daily usage recorded in this window.</p>`;
@@ -460,13 +468,14 @@ function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
   const bars = days
     .map((d) => {
       const label = dayLabel(d, opts);
-      const hPct = Math.round((d.requestCount / max) * 100);
+      // Clamp: never let a rounding edge push a fill over 100% of its track.
+      const hPct = Math.min(100, Math.round((d.requestCount / max) * 100));
       const title = escapeHtml(
         `${label} — ${d.requestCount} requests` +
           (d.usageUsd !== undefined ? ` ($${fmtNum(d.usageUsd)})` : ""),
       );
       const partial = d.partial ? " partial" : "";
-      return `<div class="day-col${partial}" title="${title}"><div class="day-fill" data-h="${hPct}"></div><span class="day-label">${escapeHtml(label)}</span></div>`;
+      return `<div class="day-col${partial}" title="${title}"><div class="day-track"><div class="day-fill" data-h="${hPct}"></div></div><span class="day-label">${escapeHtml(label)}</span></div>`;
     })
     .join("\n");
   return `<div class="days">${bars}</div>`;
@@ -541,10 +550,12 @@ body {
 .fill { height: 100%; width: 0; border-radius: 4px; background: var(--vscode-charts-blue, #4aa3ff); }
 .meter-sub { opacity: .7; font-size: 12px; }
 .days { display: flex; align-items: flex-end; gap: 6px; height: 120px; margin-top: 14px; }
-.day-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; }
-.day-fill { width: 100%; height: 0; background: var(--vscode-charts-blue, #4aa3ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
+.day-col { flex: 1; height: 100%; display: flex; flex-direction: column; }
+/* Track = column minus the label row; caps bars so 100% can't overflow. */
+.day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.day-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--vscode-charts-blue, #4aa3ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
 .day-col.partial .day-fill { opacity: .45; }
-.day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
 .tokens-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .tokens-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 select, .btn {

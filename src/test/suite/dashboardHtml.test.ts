@@ -107,7 +107,7 @@ suite("dashboardHtml", () => {
     assert.equal(cols?.length, 12);
     assert.match(html, /class="day-col partial"/);
     // Bars are data-attribute measured, applied by the script (CSP-safe).
-    assert.match(html, /class="day-fill" data-h="100"/);
+    assert.match(html, /class="day-track"><div class="day-fill" data-h="100"/);
     assert.doesNotMatch(html, /style="height:/);
     assert.match(
       html,
