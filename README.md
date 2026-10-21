@@ -22,8 +22,7 @@ Dashboard (legacy plan — session/weekly meters; usage charts carry no model ta
 
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip and dashboard timestamps (resets, update times, chart labels) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
-- **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.
-- Detailed tooltip: a per-window table (session and week, or credits) with usage, progress meter, remaining, and reset times, plus the purchased balance and footer links.
+- Detailed tooltip: a per-window table (session and week, or credits) with usage, remaining, and reset times, plus the purchased balance and footer links. On the legacy plan the session row (tooltip and dashboard) also shows the compact time to reset, e.g. `5h 23m left`.
 - Configurable auto-refresh (60 s by default; 0 = disabled; values below 30 s are clamped to 30 to protect the rate limit).
 - Keeps the last valid value if a query fails (per token: stale data from a previous token is never shown for the current one).
 

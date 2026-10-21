@@ -12,11 +12,11 @@
  *   [████░░░░░░░░░░░░░░░░░░░░░░░░░░░]
  *   Resets in 3 hours.
  *
- *   Active week (Mon 12 – today)          24.4% used
+ *   Week (Mon 12 – Mon 19)                24.4% used
  *   [███████░░░░░░░░░░░░░░░░░░░░░░░░]
  *   Resets in 2 days.
  *   [day bars of the active week]
- *   Active month (Oct 1 – today)
+ *   Month (Oct 1 – Nov 1)
  *   [day bars of the active month]
  *
  * Bar sizing and the CSP: a nonce-locked `style-src` still allows inline
@@ -30,7 +30,9 @@
  * resets on its own weekday. Both charts are therefore sliced client-side
  * from a single `range=30d` fetch: an ACTIVE week (from the last Monday, or
  * from the weekly-limit reset if it falls within the window, through today)
- * and the ACTIVE month (1st through today).
+ * and the ACTIVE month (1st through today). The card titles show the full
+ * window dates (next Monday / last day of the month); the bars render only
+ * the buckets that exist yet — future days are simply empty, never drawn.
  *
  * Security invariants:
  * - Every piece of text that can carry user or remote content (token names,
@@ -40,13 +42,19 @@
  * - No remote resources: all styles are inline, no fonts/images fetched.
  */
 
-import type { QuotaSnapshot, UsageHistory, UsagePoint, ModelUsage } from "../types/quota";
+import type {
+  QuotaSnapshot,
+  UsageHistory,
+  UsagePoint,
+  ModelUsage,
+} from "../types/quota";
 import type { TokenMeta } from "../services/TokenStore";
 import {
   formatLongStamp,
   formatShortStamp,
   type TimeFormatSetting,
 } from "./timeFormat";
+import { timeRemaining } from "./tooltip";
 
 /* Message names sent by the webview script to the host (keep in sync with
  * Dashboard.ts). Exported so controller and tests share the constants. */
@@ -189,13 +197,22 @@ function windowsSection(
   } else if (snapshot.mode === "legacy") {
     if (snapshot.session) {
       const s = snapshot.session;
+      // The Session meter also shows the compact time-to-reset (same data
+      // as the tooltip's Session cell): the relative `resetsIn` line keeps
+      // its shape, and the suffix adds the minute precision — `· 5h 23m
+      // left`. Hidden in the same cases as the hover suffix (invalid/past
+      // reset); with no render clock, both fall back to the absolute stamp.
+      const compact = timeRemaining(s.resetsAt, clockOf(opts));
+      const resetText =
+        [resetsIn(s.resetsAt, opts), compact].filter(Boolean).join(" · ") ||
+        undefined;
       rows.push(
         meterBlock(
           "Session",
           pctLabel(100 - s.percentage),
           pctLabel(100 - s.percentage),
           pct(100 - s.percentage),
-          resetsIn(s.resetsAt, opts),
+          resetText,
         ),
       );
     }
@@ -220,6 +237,11 @@ function windowsSection(
       ? `<p class="muted">Purchased balance: $${fmtNum(snapshot.purchasedBalanceUsd)}</p>`
       : "";
   return `<section class="card">${rows.join("\n")}${purchased}</section>`;
+}
+
+/** Render clock of the dashboard: the injected test value, else the real one. */
+function clockOf(opts: Pick<DashboardHtmlOptions, "now">): number {
+  return opts.now && opts.now > 0 ? opts.now : Date.now();
 }
 
 /** "Resets in 3 hours"-style relative label; falls back to an absolute stamp. */
@@ -294,7 +316,10 @@ export interface UsageSlice {
  * Builds the two usage cards: the ACTIVE week (last Monday through today;
  * further narrowed to the weekly-limit reset when it starts inside the
  * week, so the chart covers exactly what the weekly meter counts) and the
- * ACTIVE month (1st through today). One 30d fetch feeds both.
+ * ACTIVE month (1st through today). One 30d fetch feeds both. Titles carry
+ * the full window dates (week end boundary / last day of the month) while
+ * the bars only reach the newest bucket — unbuilt future days render
+ * nothing by design.
  */
 function usageSection(
   history: UsageHistory,
@@ -378,8 +403,7 @@ export function modelsOf(days: UsagePoint[]): ModelUsage[] {
         current.inputTokens = (current.inputTokens ?? 0) + group.inputTokens;
       }
       if (group.outputTokens !== undefined) {
-        current.outputTokens =
-          (current.outputTokens ?? 0) + group.outputTokens;
+        current.outputTokens = (current.outputTokens ?? 0) + group.outputTokens;
       }
       byModel.set(group.model, current);
     }
@@ -486,16 +510,28 @@ function historyWindows(
   first.setUTCHours(0, 0, 0, 0);
   first.setUTCDate(1);
 
+  // Card titles report the full window dates, not "from – today". Future days
+  // of a window simply have no buckets yet (the bars still stop at the last
+  // data point), but the title shows where the period closes — the start of
+  // the NEXT cycle: the week ends on the following Monday (the day the
+  // weekly limit resets) and the month on the day the next month begins.
+  const weekEndDayMs = weekFromMs + 7 * 86_400_000;
+  const monthEndDayMs = Date.UTC(
+    first.getUTCFullYear(),
+    first.getUTCMonth() + 1,
+    1,
+  );
+
   return {
     weekFrom: weekFromMs,
-    weekLabel: rangeLabel(weekFromMs, nowMs, opts),
+    weekLabel: rangeLabel(weekFromMs, weekEndDayMs, opts),
     monthFrom: first.getTime(),
-    monthLabel: rangeLabel(first.getTime(), nowMs, opts),
+    monthLabel: rangeLabel(first.getTime(), monthEndDayMs, opts),
     until,
   };
 }
 
-/** `Oct 12 – Oct 16` for range labels (short month + day, both ends). */
+/** `Oct 19 – Oct 26` range labels (short month + day, both ends). */
 function rangeLabel(
   fromMs: number,
   toMs: number,

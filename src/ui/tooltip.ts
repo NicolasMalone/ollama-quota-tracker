@@ -9,11 +9,11 @@
  *
  *   **Ollama Quota**
  *
- *   | Window | Usage | Meter | Remaining | Reset |
- *   |:-------|------:|:------|----------:|:------|
- *   | Credits ▸ | $1.20 / $3.00 · 58 % | `■■■□□` | $1.80 · 42 % | Nov 1 at 2:00 AM |
- *   | Session ▸ | 30 % | `■■□□□` | 70 % | Nov 1 at 12:00 AM |
- *   | Week | 80 % | `■■■■□` | 20 % | Nov 5 at 10:00 AM |
+ *   | Window | Usage | Remaining | Reset |
+ *   |:-------|------:|----------:|:------|
+ *   | Credits ▸ | $1.20 / $3.00 · 58 % | $1.80 · 42 % | Nov 1 at 2:00 AM |
+ *   | Session ▸ | 30 % | 70 % | Nov 1 at 12:00 AM · 5h 23m left |
+ *   | Week | 80 % | 20 % | Nov 5 at 10:00 AM |
  *
  *   _Purchased: $5.00_
  *
@@ -23,9 +23,6 @@
  * Design decisions:
  * - `▸` suffixes the primary window (the one mirrored in the status bar);
  *   there is no separate summary line, so nothing is duplicated.
- * - The meter always represents percent USED on hover, so meter/percent
- *   pair is unambiguous. Inside table cells the font is proportional, so
- *   the meter goes in a code span where blocks align in monospace.
  * - Remote text is neutralised per cell (pipes, backticks and newlines
  *   would break the table); timestamp formats are NOT altered
  *   (timeFormat.ts).
@@ -45,6 +42,8 @@ export interface TooltipOptions {
   errorNote?: string;
   /** Name of the active (named) token, shown in the header when set. */
   tokenName?: string;
+  /** Test seam: clock injected as a number; absent uses the real clock. */
+  now?: number;
 }
 
 /** Command ids for the footer links (must match extension.ts). */
@@ -53,7 +52,7 @@ export const CMD_REFRESH = "ollamaQuota.refresh";
 export const CMD_DASHBOARD = "ollamaQuota.openDashboard";
 
 /* ------------------------------------------------------------------------ */
-/* Cell sanitising + meter                                                   */
+/* Cell sanitising                                                          */
 /* ------------------------------------------------------------------------ */
 
 /** Fallback for cells whose source value is missing. */
@@ -65,7 +64,7 @@ const CELL_EMPTY = "—";
  * includes U+00A0), so they never reach the renderer. The entity is plain
  * ASCII in the markdown source — it survives any trimming — and is decoded
  * into a non-breaking space only when the hover HTML is emitted, spacing
- * out the otherwise glued columns (e.g. "Usage Meter", "Remaining Reset").
+ * out the otherwise glued columns (e.g. "Usage Remaining", "Remaining Reset").
  */
 const PAD = "&nbsp;";
 /** Double gutter inside header cells (wider than data cells). */
@@ -91,29 +90,6 @@ export function escapeCell(s: string): string {
     .replace(/[\\!()[\]]/g, "'")
     .replace(/[\r\n\t]+/g, " ")
     .trim();
-}
-
-const METER_SEGMENTS = 5;
-// Symmetric square blocks: ■ filled / □ empty. Unicode geometric shapes;
-// codicon circles were rejected for looking like dots/points.
-const METER_FILLED = "■";
-const METER_EMPTY = "□";
-
-/**
- * Symmetric-block consumption meter shared by the status bar and the
- * tooltip, e.g. ■■□□□ for 60% consumed. Both surfaces call the SAME
- * function with the SAME argument (percent used), so the two meters can
- * never diverge; in the tooltip each meter is a code span, where the
- * symmetric ■/□ blocks align in monospace. Fraction blocks ▏▎▍▌█░ were
- * tried for a dashboard-like bar and render unevenly in hovers — do not
- * reintroduce them.
- */
-export function buildMeter(
-  consumedPct: number,
-  segments = METER_SEGMENTS,
-): string {
-  const filled = Math.round((clampPct(consumedPct) / 100) * segments);
-  return METER_FILLED.repeat(filled) + METER_EMPTY.repeat(segments - filled);
 }
 
 export function clampPct(n: number): number {
@@ -174,8 +150,15 @@ function buildTable(
       windowRow("Credits", snapshot.credits, true, opts.timeFormat, true),
     );
   } else if (snapshot.mode === "legacy" && snapshot.session) {
+    // The session row also carries the compact time-to-reset (the stamp in
+    // the Reset cell says WHEN, this says HOW LONG is left): the session
+    // window is the one the user waits on, so the hover answers "when can I
+    // use it again" without doing clock math. Omitted when the reset stamp
+    // is missing/invalid or already in the past.
     rows.push(
-      windowRow("Session", snapshot.session, true, opts.timeFormat, false),
+      windowRow("Session", snapshot.session, true, opts.timeFormat, false, {
+        suffix: timeRemaining(snapshot.session.resetsAt, nowMs(opts)),
+      }),
     );
     if (snapshot.weekly) {
       rows.push(
@@ -186,9 +169,9 @@ function buildTable(
   if (rows.length === 0) {
     return undefined;
   }
-  const align = "|:--------|-------:|:--------|---------:|:-----|";
+  const align = "|:--------|-------:|---------:|:-----|";
 
-  const head = `|${PAD2}Window${PAD2}|${PAD2}Usage${PAD2}|${PAD2}Meter${PAD2}|${PAD2}Remaining${PAD2}|${PAD2}Reset${PAD2}|`;
+  const head = `|${PAD2}Window${PAD2}|${PAD2}Usage${PAD2}|${PAD2}Remaining${PAD2}|${PAD2}Reset${PAD2}|`;
   return [head, align, ...rows].join("\n");
 }
 
@@ -199,8 +182,6 @@ function buildTable(
  * - Legacy windows show percentages only (`30 %` / `70 %`).
  * - `isPrimary` suffixes the name with `▸` (status-bar mirror).
  * - `showMoney` renders the money formatters (credits mode).
- * - The Meter cell reuses the status-bar meter (buildMeter, percent used),
- *   rendered as a monospace code span.
  */
 function windowRow(
   name: string,
@@ -214,6 +195,8 @@ function windowRow(
   isPrimary: boolean,
   timeFormat: TimeFormatSetting,
   showMoney: boolean,
+  /** Extra text after the reset stamp (e.g. `5h 23m left`). */
+  opts?: { suffix?: string },
 ): string {
   const usedPct = Math.round(clampPct(100 - w.percentage));
   const leftPct = Math.round(clampPct(w.percentage));
@@ -230,18 +213,65 @@ function windowRow(
   const reset = w.resetsAt
     ? escapeCell(formatShortStamp(w.resetsAt, { timeFormat }))
     : CELL_EMPTY;
+  // The suffix is OUR OWN text (digits + h/m/left, no markdown chars), so it
+  // joins the cell without re-escaping — escapeCell stays for remote/stamp
+  // text only. A middle-dot keeps the two reads visually separated.
+  const resetCell = opts?.suffix ? `${reset}${PAD}· ${opts.suffix}` : reset;
   const cells = [
     label,
     usage,
-    // Same builder and same argument as the status bar meter: identity is
-    // guaranteed character by character (33% → ■■□□□ on both surfaces).
-    `\`${buildMeter(usedPct)}\``,
     remaining,
     // Leading gutter INSIDE the (left-aligned) reset cell ⇒ a real gap
     // between the Remaining column and the stamp in every row.
-    `${RESET_PAD}${reset}`,
+    `${RESET_PAD}${resetCell}`,
   ];
   return `|${PAD}${cells.join(`${PAD}|${PAD}`)}${PAD}|`;
+}
+
+/**
+ * Compact time-to-reset for the Reset cell, e.g. `5h 23m left`.
+ *
+ * Pure timestamp math on the reset ISO against `nowMs` (the render clock, or
+ * the injected test value): no locale involvement, so the output is the
+ * same in every host. The branch ladder mirrors the dashboard's `resetsIn`
+ * granularity, tightened for a narrow table cell:
+ * - < 1 minute → `any moment now` (a "0m left" would read as broken).
+ * - < 1 hour → `42m left`; < 2 days → `5h 23m left`; longer → `2d 4h left`.
+ * - Invalid or ALREADY-PAST resets return undefined: the absolute stamp
+ *   already tells when it reset; showing negative time would be noise.
+ */
+export function timeRemaining(
+  iso: string | undefined,
+  nowMs: number,
+): string | undefined {
+  if (!iso) {
+    return undefined;
+  }
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) {
+    return undefined;
+  }
+  const minutesLeft = Math.floor((then - nowMs) / 60_000);
+  if (minutesLeft < 0) {
+    return undefined;
+  }
+  if (minutesLeft < 1) {
+    return "any moment now";
+  }
+  if (minutesLeft < 60) {
+    return `${minutesLeft}m left`;
+  }
+  const hoursLeft = Math.floor(minutesLeft / 60);
+  if (hoursLeft < 48) {
+    return `${hoursLeft}h ${minutesLeft % 60}m left`;
+  }
+  const daysLeft = Math.floor(hoursLeft / 24);
+  return `${daysLeft}d ${hoursLeft % 24}h left`;
+}
+
+/** Render clock: the injected test value, else the real one. */
+function nowMs(opts: TooltipOptions): number {
+  return opts.now ?? Date.now();
 }
 
 /** Purchased balance note (credits mode only). */

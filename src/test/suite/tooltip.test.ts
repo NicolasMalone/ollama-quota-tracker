@@ -1,5 +1,9 @@
 import { strict as assert } from "assert";
-import { buildTooltipMarkdown, buildMeter, escapeCell } from "../../ui/tooltip";
+import {
+  buildTooltipMarkdown,
+  escapeCell,
+  timeRemaining,
+} from "../../ui/tooltip";
 import type { QuotaSnapshot } from "../../types/quota";
 
 /** Builds a credits-mode snapshot (percentages are REMAINING percent). */
@@ -47,7 +51,7 @@ function legacySnapshot(overrides: Partial<QuotaSnapshot> = {}): QuotaSnapshot {
 }
 
 suite("tooltip — table layout", () => {
-  test("credits: money columns, meter code span and reset cell", () => {
+  test("credits: money columns and reset cell", () => {
     const md = buildTooltipMarkdown(creditsSnapshot(), { timeFormat: "12h" });
 
     // Header: bold title (plan suffix omitted — the API has no plan name).
@@ -60,22 +64,23 @@ suite("tooltip — table layout", () => {
     // Header labels, separated by &nbsp; gutters.
     assert.match(
       tableRows[0]!,
-      /^\|(&nbsp;){2}Window(&nbsp;){2}\|(&nbsp;){2}Usage(&nbsp;){2}\|(&nbsp;){2}Meter(&nbsp;){2}\|(&nbsp;){2}Remaining(&nbsp;){2}\|(&nbsp;){2}Reset(&nbsp;){2}\|$/,
+      /^\|(&nbsp;){2}Window(&nbsp;){2}\|(&nbsp;){2}Usage(&nbsp;){2}\|(&nbsp;){2}Remaining(&nbsp;){2}\|(&nbsp;){2}Reset(&nbsp;){2}\|$/,
     );
 
-    // Credits row: primary marker, money usage, shared meter (40% used →
-    // 2/5 blocks, identical to the status bar), remaining money, reset stamp.
+    // Credits row: primary marker, money usage, remaining money, reset stamp.
     const row = tableRows[2]!;
     assert.match(row, /Credits ▸/);
     assert.match(row, /\$1\.2 \/ \$3 · 40 %/);
-    assert.match(row, /`■■□□□`/);
     assert.match(row, /\$1\.8 · 60 %/);
     assert.match(row, /\|(&nbsp;){3,}\w{3} \d{1,2} at \d/);
 
     // Purchased note (credits only) and footer links; no 24h line anywhere.
     assert.match(md, /_Purchased: \$5_\n\n/);
     assert.doesNotMatch(md, /\b24h\b/);
-    assert.match(md, /_Updated .+_\n\n_\[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/);
+    assert.match(
+      md,
+      /_Updated .+_\n\n_\[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/,
+    );
   });
 
   test("token name renders neutralised in the header when provided", () => {
@@ -99,21 +104,27 @@ suite("tooltip — table layout", () => {
   });
 
   test("legacy: session primary (▸), week follows, percentage columns", () => {
-    const md = buildTooltipMarkdown(legacySnapshot(), { timeFormat: "12h" });
+    // Clock injected so the session row's time-to-reset is deterministic:
+    // session reset Oct 15 12:00Z viewed from Oct 15 06:37Z → 5h 23m left.
+    const md = buildTooltipMarkdown(legacySnapshot(), {
+      timeFormat: "12h",
+      now: Date.parse("2026-10-15T06:37:00Z"),
+    });
     const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
     assert.equal(tableRows.length, 4, "header + align + 2 data rows");
 
-    // Data cells carry &nbsp; gutters; meters are shared status-bar code
-    // spans. Session: 70% remaining → 30% used → 2/5 blocks. Week: 80%
-    // used → 4/5 blocks.
+    // Data cells carry &nbsp; gutters. Session: 30% used → 70% remaining.
+    // Week: 80% used → 20% remaining; the Week row shows only the absolute
+    // stamp.
     assert.match(
       tableRows[2]!,
-      /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;`■■□□□`&nbsp;\|&nbsp;70 %&nbsp;\|/,
+      /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;70 %&nbsp;\|(&nbsp;)+\w{3} \d{1,2} at \d.*&nbsp;· 5h 23m left/,
     );
     assert.match(
       tableRows[3]!,
-      /&nbsp;Week&nbsp;\|&nbsp;80 %&nbsp;\|&nbsp;`■■■■□`&nbsp;\|&nbsp;20 %&nbsp;\|/,
+      /&nbsp;Week&nbsp;\|&nbsp;80 %&nbsp;\|&nbsp;20 %&nbsp;\|/,
     );
+    assert.doesNotMatch(tableRows[3]!, /left/);
   });
 
   test("unknown mode: no table, message and footer only", () => {
@@ -176,16 +187,38 @@ suite("tooltip — sanitising (escapeCell)", () => {
   });
 });
 
-suite("tooltip — buildMeter (shared with the status bar)", () => {
-  test("matches the documented block meter", () => {
-    assert.equal(buildMeter(0), "□□□□□");
-    assert.equal(buildMeter(60), "■■■□□");
-    assert.equal(buildMeter(100), "■■■■■");
+suite("tooltip — timeRemaining (session cell)", () => {
+  const base = Date.parse("2026-10-15T12:00:00Z");
+
+  test("minutes left under an hour", () => {
+    assert.equal(timeRemaining("2026-10-15T12:42:00Z", base), "42m left");
   });
 
-  test("equals the status bar meter for the same percentage", () => {
-    // Identity contract: the hover meter must match the status bar meter
-    // character by character (33% rounds to 2/5 on both surfaces).
-    assert.equal(buildMeter(33), "■■□□□");
+  test("hours and minutes left", () => {
+    assert.equal(timeRemaining("2026-10-15T17:23:00Z", base), "5h 23m left");
+  });
+
+  test("days and hours left", () => {
+    assert.equal(timeRemaining("2026-10-17T16:00:00Z", base), "2d 4h left");
+  });
+
+  test("under a minute reads as any moment, not 0m", () => {
+    assert.equal(timeRemaining("2026-10-15T12:00:30Z", base), "any moment now");
+  });
+
+  test("past reset, missing and invalid stamps → no suffix", () => {
+    assert.equal(timeRemaining("2026-10-15T11:59:59Z", base), undefined);
+    assert.equal(timeRemaining(undefined, base), undefined);
+    assert.equal(timeRemaining("not-a-date", base), undefined);
+  });
+
+  test("only our own suffix reaches the reset cell (not escaped as remote)", () => {
+    // The suffix is generated text: a middle dot + digits; no markdown or
+    // link chars can appear in it by construction.
+    const md = buildTooltipMarkdown(legacySnapshot(), {
+      timeFormat: "12h",
+      now: Date.parse("2026-10-15T06:37:00Z"),
+    });
+    assert.match(md, /· 5h 23m left/);
   });
 });

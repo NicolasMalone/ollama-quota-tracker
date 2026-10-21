@@ -8,7 +8,12 @@ import {
 } from "../../ui/dashboardHtml";
 import { parseBalanceResponse, parseUsageHistory } from "../../providers/parse";
 import type { QuotaSnapshot, UsagePoint } from "../../types/quota";
-import { creditsBalance, legacyBalance, usage30d, legacyUsage30d } from "./fixtures";
+import {
+  creditsBalance,
+  legacyBalance,
+  usage30d,
+  legacyUsage30d,
+} from "./fixtures";
 
 const NONCE = "abc123";
 
@@ -77,7 +82,7 @@ suite("dashboardHtml", () => {
     const html = buildDashboardHtml({
       ...baseOpts(),
       snapshot: legacySnapshot(),
-      now: Date.parse("2026-10-01T05:00:00Z"),
+      now: Date.parse("2026-10-01T05:00:00Z"), // 2h before the session reset
       nonce: NONCE,
     });
     assert.match(html, /Session/);
@@ -85,6 +90,11 @@ suite("dashboardHtml", () => {
     // session 75% remaining → 25% used; weekly 40% remaining → 60% used
     assert.match(html, /25% used/);
     assert.match(html, /60% used/);
+    // Session row carries the compact time-to-reset (like the tooltip's
+    // Session cell): the relative label plus the minute-precise suffix.
+    // Weekly limit keeps its plain relative label (no suffix).
+    assert.match(html, /Resets in 2 hours\. · 2h 0m left/);
+    assert.doesNotMatch(html.slice(html.indexOf("Weekly limit")), /left/);
   });
 
   test("usage charts: active week and active month sliced from 30d", () => {
@@ -96,10 +106,14 @@ suite("dashboardHtml", () => {
       now: Date.parse("2026-10-16T12:00:00Z"), // Friday Oct 16
       nonce: NONCE,
     });
-    assert.match(html, /Week \(Oct 12 – Oct 16\)/);
+    // Titles carry the full window dates: from the last Monday to the day
+    // after the window's last full day (the next Monday, 5 days ahead), and
+    // from the 1st to the month's last calendar day — NOT through today;
+    // bars stop at the last bucket regardless (Oct 16 here).
+    assert.match(html, /Week \(Oct 12 – Oct 19\)/);
     // Active week = 200+340+0+560+404 = 1504 requests.
     assert.match(html, /1,504 requests/);
-    assert.match(html, /Month \(Oct 1 – Oct 16\)/);
+    assert.match(html, /Month \(Oct 1 – Nov 1\)/);
     // Active month = week (1504) + Oct 1 (120) + Oct 4 (160) = 1784.
     assert.match(html, /1,784 requests/);
     // Week chart: 5 day columns; month chart: 7 → 12 columns overall.
@@ -140,9 +154,18 @@ suite("dashboardHtml", () => {
     // nothing): gpt-oss 200+180+380=760 / $1.75, glm 160+24+440=624 / $1.30,
     // qwen 120 / $0.57 — sorted by cost desc.
     const week = html.slice(html.indexOf("Week ("), html.indexOf("Month ("));
-    assert.match(week, /<td class="model">gpt-oss:120b<\/td><td class="num">760<\/td><td class="num">\$1\.75<\/td>/);
-    assert.match(week, /<td class="model">glm-5\.3-flash<\/td><td class="num">624<\/td><td class="num">\$1\.3<\/td>/);
-    assert.match(week, /<td class="model">qwen3-coder:480b<\/td><td class="num">120<\/td><td class="num">\$0\.57<\/td>/);
+    assert.match(
+      week,
+      /<td class="model">gpt-oss:120b<\/td><td class="num">760<\/td><td class="num">\$1\.75<\/td>/,
+    );
+    assert.match(
+      week,
+      /<td class="model">glm-5\.3-flash<\/td><td class="num">624<\/td><td class="num">\$1\.3<\/td>/,
+    );
+    assert.match(
+      week,
+      /<td class="model">qwen3-coder:480b<\/td><td class="num">120<\/td><td class="num">\$0\.57<\/td>/,
+    );
     assert.ok(
       week.indexOf("gpt-oss:120b") < week.indexOf("glm-5.3-flash") &&
         week.indexOf("glm-5.3-flash") < week.indexOf("qwen3-coder:480b"),
@@ -150,10 +173,22 @@ suite("dashboardHtml", () => {
     );
 
     // Month adds the Oct 1 + Oct 4 buckets: gpt-oss 880, glm 704, qwen 200.
-    const month = html.slice(html.indexOf("Month ("), html.indexOf("API tokens"));
-    assert.match(month, /<td class="model">gpt-oss:120b<\/td><td class="num">880<\/td>/);
-    assert.match(month, /<td class="model">glm-5\.3-flash<\/td><td class="num">704<\/td>/);
-    assert.match(month, /<td class="model">qwen3-coder:480b<\/td><td class="num">200<\/td>/);
+    const month = html.slice(
+      html.indexOf("Month ("),
+      html.indexOf("API tokens"),
+    );
+    assert.match(
+      month,
+      /<td class="model">gpt-oss:120b<\/td><td class="num">880<\/td>/,
+    );
+    assert.match(
+      month,
+      /<td class="model">glm-5\.3-flash<\/td><td class="num">704<\/td>/,
+    );
+    assert.match(
+      month,
+      /<td class="model">qwen3-coder:480b<\/td><td class="num">200<\/td>/,
+    );
   });
 
   test("usage charts: model names are escaped (remote text)", () => {
@@ -169,7 +204,11 @@ suite("dashboardHtml", () => {
           until: "2026-10-16T00:00:00Z",
           request_count: 1,
           groups: [
-            { model: '<img src=x onerror="alert(1)">', request_count: 1, usage_usd: 0.01 },
+            {
+              model: '<img src=x onerror="alert(1)">',
+              request_count: 1,
+              usage_usd: 0.01,
+            },
           ],
         },
       ],
@@ -195,7 +234,7 @@ suite("dashboardHtml", () => {
     });
     assert.doesNotMatch(html, /<table class="models">/);
     // The charts themselves still render.
-    assert.match(html, /Week \(Oct 12 – Oct 16\)/);
+    assert.match(html, /Week \(Oct 12 – Oct 19\)/);
   });
 
   test("usage charts: model table without tokens has no in/out column", () => {

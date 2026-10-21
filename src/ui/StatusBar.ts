@@ -3,7 +3,6 @@ import type { QuotaSnapshot } from "../types/quota";
 import { pickPrimaryWindow } from "../providers/parse";
 import type { RefreshState } from "../services/QuotaStore";
 import {
-  buildMeter,
   buildTooltipMarkdown,
   clampPct,
   CMD_CONFIGURE,
@@ -22,11 +21,10 @@ export interface StatusBarDeps {
 }
 
 /**
- * Minimal status bar item: `$(cloud) Ollama ●●●○○ 58%` (percent consumed by
- * default, plus a codicon consumption meter). The same meter is shown in the
- * tooltip next to each percentage (summary plus session/week or credits).
- * Click opens the Dashboard (or token setup when no token exists); manual
- * refresh remains available as a command and inside the dashboard.
+ * Minimal status bar item: `$(cloud) Ollama 58%` (percent consumed by
+ * default). Click opens the Dashboard (or token setup when no token
+ * exists); manual refresh remains available as a command and inside the
+ * dashboard.
  */
 export class StatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
@@ -109,11 +107,7 @@ export class StatusBar implements vscode.Disposable {
     const left = Math.round(primary.percentage);
     const showUsed = this.getDisplayMode() === "used";
     const shownPct = showUsed ? Math.round(usedPct) : left;
-    // The meter reflects the displayed quantity: consumed quota in "used"
-    // mode, remaining quota in "remaining" mode, so meter and number agree.
-    this.setText(
-      `${icon} Ollama ${buildMeter(showUsed ? usedPct : left)} ${shownPct}%`,
-    );
+    this.setText(`${icon} Ollama ${shownPct}%`);
     this.item.tooltip = mdTooltip(
       snapshot,
       this.getTimeFormat(),
