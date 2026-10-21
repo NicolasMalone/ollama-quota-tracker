@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.7.0...v0.8.0) (2026-10-21)
+
+### Features
+
+* **dashboard:** per-model usage breakdown in usage charts ([833696e](https://github.com/NicolasMalone/ollama-quota-tracker/commit/833696e867400c1e4390262966e36f705629384a))
+
 ## [0.7.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.6.4...v0.7.0) (2026-10-19)
 
 ### Features
