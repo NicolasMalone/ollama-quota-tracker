@@ -10,20 +10,20 @@ Displays your remaining **Ollama Cloud** quota in the VS Code status bar.
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
-- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management.
+- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month with a per-model usage breakdown, and token management. Charts adapt to narrow panels.
 
-Dashboard (credits plan — meters, week/month usage charts and the token selector):
+Dashboard (credits plan — meters, week/month usage charts with per-model tables and the token selector):
 
-![Dashboard on the credits plan: included credits meter, active week and active month charts, token selector](media/dashboard-credits.png)
+![Dashboard on the credits plan: included credits meter, active week and active month charts with per-model tables, token selector](media/dashboard-credits.png)
 
-Dashboard (legacy plan — session/weekly meters, with the stale-data note after a failed refresh):
+Dashboard (legacy plan — session/weekly meters; usage charts carry no model tables because legacy usage reports no model data):
 
-![Dashboard on the legacy plan with session and weekly meters](media/dashboard-legacy.png)
+![Dashboard on the legacy plan with session and weekly meters and usage charts without model tables](media/dashboard-legacy.png)
 
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip and dashboard timestamps (resets, update times, chart labels) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
 - **Progress bar** with square segments (`■■■□□`) next to the percentage, both in the Status Bar and in the tooltip.
-- Detailed tooltip: percentages per window (session and week, or credits), used/remaining, purchased, resets, and 24h usage.
+- Detailed tooltip: a per-window table (session and week, or credits) with usage, progress meter, remaining, and reset times, plus the purchased balance and footer links.
 - Configurable auto-refresh (60 s by default; 0 = disabled; values below 30 s are clamped to 30 to protect the rate limit).
 - Keeps the last valid value if a query fails (per token: stale data from a previous token is never shown for the current one).
 
