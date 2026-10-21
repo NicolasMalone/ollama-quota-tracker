@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.8.0...v0.8.1) (2026-10-21)
+
+### Documentation
+
+* refresh README for per-model tables and responsive charts ([b63b3c2](https://github.com/NicolasMalone/ollama-quota-tracker/commit/b63b3c236e986a380640fda9d40016b5e5280bd2))
+
 ## [0.8.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.7.0...v0.8.0) (2026-10-21)
 
 ### Features
