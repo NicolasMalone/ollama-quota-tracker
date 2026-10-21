@@ -17,8 +17,7 @@
  *
  *   _Purchased: $5.00_
  *
- *   _24h 120 req · $2.35 · 15,234 in / 4,532 out_
- *   _Updated Nov 1, 2026 at 2:30 PM · [Refresh now](command:...) ·
+ *   _Updated Nov 1, 2026 at 2:30 PM · [Dashboard](command:...) ·
  *   [Configure key](command:...)_
  *
  * Design decisions:
@@ -33,7 +32,7 @@
  * - Command links live in the footer, which is outside the table.
  */
 
-import type { QuotaSnapshot, UsageSummary } from "../types/quota";
+import type { QuotaSnapshot } from "../types/quota";
 import {
   formatLongStamp,
   formatShortStamp,
@@ -253,39 +252,19 @@ function purchasedNote(snapshot: QuotaSnapshot): string | undefined {
   return `_Purchased: $${fmt(snapshot.purchasedBalanceUsd ?? 0)}_`;
 }
 
-/** Footer: 24h usage (if any) + updated stamp + the two command links. */
+/** Footer: updated stamp line with the command links on their own line. */
 function footerLine(snapshot: QuotaSnapshot, opts: TooltipOptions): string {
-  const usage = snapshot.usageLast24h;
-  const parts: string[] = [];
-  if (usage) {
-    parts.push(`_24h ${usageBits(usage)}_`);
-  }
   const updated = escapeCell(
     formatLongStamp(new Date(snapshot.fetchedAt).toISOString(), {
       timeFormat: opts.timeFormat,
     }),
   );
-  parts.push(
-    `_Updated ${updated} · ` +
-      `[Refresh now](command:${CMD_REFRESH}) · ` +
-      `[Dashboard](command:${CMD_DASHBOARD}) · ` +
-      `[Configure key](command:${CMD_CONFIGURE})_`,
+  return (
+    `_Updated ${updated}_\n\n` +
+    `_[Refresh now](command:${CMD_REFRESH}) · ` +
+    `[Dashboard](command:${CMD_DASHBOARD}) · ` +
+    `[Configure key](command:${CMD_CONFIGURE})_`
   );
-  return parts.join("\n\n");
-}
-
-/** Usage summary rendered as `120 req · $2.35 · 15,234 in / 4,532 out`. */
-function usageBits(usage: UsageSummary): string {
-  const bits = [`${usage.requestCount} req`];
-  if (usage.usageUsd !== undefined) {
-    bits.push(`$${fmt(usage.usageUsd)}`);
-  }
-  if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) {
-    bits.push(
-      `${fmtNum(usage.inputTokens ?? 0)} in / ${fmtNum(usage.outputTokens ?? 0)} out`,
-    );
-  }
-  return bits.join(" · ");
 }
 
 /* ------------------------------------------------------------------------ */
@@ -297,8 +276,4 @@ function fmt(n: number): string {
     return "-";
   }
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function fmtNum(n: number): string {
-  return n.toLocaleString();
 }

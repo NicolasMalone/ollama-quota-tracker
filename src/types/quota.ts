@@ -23,8 +23,6 @@ export interface QuotaSnapshot {
   weekly?: QuotaWindow;
   /** Total purchased credit balance in USD (0 if none). */
   purchasedBalanceUsd?: number;
-  /** Aggregated usage for the last 24 hours, if available. */
-  usageLast24h?: UsageSummary;
   fetchedAt: string;
 }
 
@@ -35,6 +33,8 @@ export interface UsageSummary {
   outputTokens?: number;
   from?: string;
   until?: string;
+  /** Per-model breakdown of the range (group_by=model). */
+  models?: ModelUsage[];
 }
 
 /** One day bucket of a usage response (`/api/usage`). */
@@ -43,6 +43,17 @@ export interface UsagePoint {
   until: string;
   /** True when the day is still in progress (today's bucket). */
   partial?: boolean;
+  requestCount: number;
+  usageUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Per-model usage breakdown when the fetch requested `group_by=model`. */
+  groups?: ModelUsage[];
+}
+
+/** Per-model usage of a range or bucket (`group_by=model` response). */
+export interface ModelUsage {
+  model: string;
   requestCount: number;
   usageUsd?: number;
   inputTokens?: number;

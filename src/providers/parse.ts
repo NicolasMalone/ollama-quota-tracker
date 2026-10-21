@@ -9,6 +9,7 @@ import type {
   QuotaMode,
   QuotaSnapshot,
   QuotaWindow,
+  ModelUsage,
   UsageHistory,
   UsagePoint,
   UsageSummary,
@@ -114,8 +115,9 @@ export function parseBalanceResponse(raw: unknown): QuotaSnapshot {
 }
 
 /**
- * Parses the raw payload of `/api/usage` (range=24h, scope=self) into a UsageSummary.
- * Legacy-only plans may omit cost and token counts; those fields become undefined.
+ * Parses the raw payload of `/api/usage` (any range, scope=self) into a
+ * UsageSummary. Legacy-only plans may omit cost and token counts; those
+ * fields become undefined.
  */
 export function parseUsageResponse(raw: unknown): UsageSummary | undefined {
   if (typeof raw !== "object" || raw === null) {
@@ -149,7 +151,58 @@ export function parseUsageResponse(raw: unknown): UsageSummary | undefined {
   if (typeof outputTokens === "number") {
     summary.outputTokens = outputTokens;
   }
+  // Model breakdown (group_by=model): tolerant, invalid groups dropped.
+  const models = parseGroups(totals.groups);
+  if (models) {
+    summary.models = models;
+  }
   return summary;
+}
+
+/**
+ * Parses the `groups` array of a grouped (group_by=model) usage payload.
+ * Every entry must at least carry a non-empty model name and a valid
+ * request_count; cost/token fields are kept only when finite. Entries that
+ * fail those rules are dropped without invalidating the rest. Returns
+ * undefined when nothing usable remains (or when `groups` is absent).
+ */
+function parseGroups(raw: unknown): ModelUsage[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const groups: ModelUsage[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const o = entry as Record<string, unknown>;
+    const model = o.model;
+    const requestCount = o.request_count;
+    if (
+      typeof model !== "string" ||
+      model.length === 0 ||
+      typeof requestCount !== "number" ||
+      !Number.isFinite(requestCount) ||
+      requestCount < 0
+    ) {
+      continue;
+    }
+    const group: ModelUsage = { model, requestCount };
+    if (typeof o.usage_usd === "number" && Number.isFinite(o.usage_usd)) {
+      group.usageUsd = o.usage_usd;
+    }
+    if (typeof o.input_tokens === "number" && Number.isFinite(o.input_tokens)) {
+      group.inputTokens = o.input_tokens;
+    }
+    if (
+      typeof o.output_tokens === "number" &&
+      Number.isFinite(o.output_tokens)
+    ) {
+      group.outputTokens = o.output_tokens;
+    }
+    groups.push(group);
+  }
+  return groups.length > 0 ? groups : undefined;
 }
 
 /**
@@ -210,6 +263,10 @@ function parseBucket(bucket: unknown): UsagePoint | undefined {
   }
   if (typeof o.output_tokens === "number" && Number.isFinite(o.output_tokens)) {
     point.outputTokens = o.output_tokens;
+  }
+  const groups = parseGroups(o.groups);
+  if (groups) {
+    point.groups = groups;
   }
   return point;
 }

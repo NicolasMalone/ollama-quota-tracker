@@ -72,13 +72,10 @@ suite("tooltip — table layout", () => {
     assert.match(row, /\$1\.8 · 60 %/);
     assert.match(row, /\|(&nbsp;){3,}\w{3} \d{1,2} at \d/);
 
-    // Purchased note (credits only) and footer without 24h when absent.
+    // Purchased note (credits only) and footer links; no 24h line anywhere.
     assert.match(md, /_Purchased: \$5_\n\n/);
     assert.doesNotMatch(md, /\b24h\b/);
-    assert.match(
-      md,
-      /_Updated .+ · \[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/,
-    );
+    assert.match(md, /_Updated .+_\n\n_\[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/);
   });
 
   test("token name renders neutralised in the header when provided", () => {
@@ -90,18 +87,15 @@ suite("tooltip — table layout", () => {
     assert.match(md, /^\*\*Ollama Quota\*\* — Per-sonal-script-\n\n/m);
   });
 
-  test("credits: footer fuses 24h usage with Updated", () => {
-    const snapshot = creditsSnapshot({
-      usageLast24h: {
-        requestCount: 15,
-        usageUsd: 0.01718,
-        inputTokens: 106000,
-        outputTokens: 13600,
-      },
-    });
-    const md = buildTooltipMarkdown(snapshot, { timeFormat: "24h" });
-    assert.match(md, /_24h 15 req · \$0\.02 · 106,000 in \/ 13,600 out_/);
-    assert.match(md, /_Updated /);
+  test("credits: footer shows Updated and the command links", () => {
+    const md = buildTooltipMarkdown(creditsSnapshot(), { timeFormat: "24h" });
+    assert.doesNotMatch(md, /\b24h\b/);
+    // "Updated" on its own line; the action links on the next one.
+    assert.match(md, /_Updated [^\n]+_\n\n_\[/);
+    assert.match(
+      md,
+      /_\[Refresh now\]\(command:ollamaQuota\.refresh\) · \[Dashboard\]\(command:ollamaQuota\.openDashboard\) · \[Configure key\]\(command:ollamaQuota\.configureApiKey\)_/,
+    );
   });
 
   test("legacy: session primary (▸), week follows, percentage columns", () => {

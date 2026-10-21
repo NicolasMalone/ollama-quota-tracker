@@ -33,6 +33,15 @@ export interface UsageMetrics {
   input_tokens?: number;
   cached_input_tokens?: number;
   output_tokens?: number;
+  /** Present when `group_by=model` is requested (up to 10 groups + remainder). */
+  groups?: UsageGroup[];
+  /** Combined usage from groups outside the selection limit; omitted when empty. */
+  remainder?: UsageMetrics;
+}
+
+/** One model group of a grouped usage response (`group_by=model`). */
+export interface UsageGroup extends UsageMetrics {
+  model: string;
 }
 
 export interface UsageBucket extends UsageMetrics {
@@ -45,6 +54,7 @@ export interface UsageResponse {
   range: "24h" | "7d" | "30d";
   scope: "self" | "team";
   granularity: "hour" | "day";
+  group_by?: "model";
   from: string;
   until: string;
   totals: UsageMetrics;

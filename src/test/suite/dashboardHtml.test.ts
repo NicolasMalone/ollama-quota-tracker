@@ -8,7 +8,7 @@ import {
 } from "../../ui/dashboardHtml";
 import { parseBalanceResponse, parseUsageHistory } from "../../providers/parse";
 import type { QuotaSnapshot, UsagePoint } from "../../types/quota";
-import { creditsBalance, legacyBalance, usage30d } from "./fixtures";
+import { creditsBalance, legacyBalance, usage30d, legacyUsage30d } from "./fixtures";
 
 const NONCE = "abc123";
 
@@ -116,6 +116,122 @@ suite("dashboardHtml", () => {
     assert.match(
       html,
       /el\.style\.width = el\.getAttribute\('data-w'\) \+ '%'/,
+    );
+  });
+
+  test("usage charts: per-model tables aggregated and cost-sorted", () => {
+    const history = parseUsageHistory(usage30d)!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"), // Friday Oct 16
+      nonce: NONCE,
+    });
+    // Two tables (week + month) with the cost column (costs present).
+    const tables = html.match(/<table class="models">/g);
+    assert.equal(tables?.length, 2);
+    assert.match(
+      html,
+      /<th>Model<\/th><th class="num">Req<\/th><th class="num">\$<\/th><th class="num">in \/ out<\/th>/,
+    );
+
+    // Week slice sums the groups of its 5 buckets (the empty Oct 14 adds
+    // nothing): gpt-oss 200+180+380=760 / $1.75, glm 160+24+440=624 / $1.30,
+    // qwen 120 / $0.57 — sorted by cost desc.
+    const week = html.slice(html.indexOf("Week ("), html.indexOf("Month ("));
+    assert.match(week, /<td class="model">gpt-oss:120b<\/td><td class="num">760<\/td><td class="num">\$1\.75<\/td>/);
+    assert.match(week, /<td class="model">glm-5\.3-flash<\/td><td class="num">624<\/td><td class="num">\$1\.3<\/td>/);
+    assert.match(week, /<td class="model">qwen3-coder:480b<\/td><td class="num">120<\/td><td class="num">\$0\.57<\/td>/);
+    assert.ok(
+      week.indexOf("gpt-oss:120b") < week.indexOf("glm-5.3-flash") &&
+        week.indexOf("glm-5.3-flash") < week.indexOf("qwen3-coder:480b"),
+      "cost-sorted model rows",
+    );
+
+    // Month adds the Oct 1 + Oct 4 buckets: gpt-oss 880, glm 704, qwen 200.
+    const month = html.slice(html.indexOf("Month ("), html.indexOf("API tokens"));
+    assert.match(month, /<td class="model">gpt-oss:120b<\/td><td class="num">880<\/td>/);
+    assert.match(month, /<td class="model">glm-5\.3-flash<\/td><td class="num">704<\/td>/);
+    assert.match(month, /<td class="model">qwen3-coder:480b<\/td><td class="num">200<\/td>/);
+  });
+
+  test("usage charts: model names are escaped (remote text)", () => {
+    const history = parseUsageHistory({
+      range: "30d",
+      granularity: "day",
+      from: "2026-10-13T00:00:00Z",
+      until: "2026-10-16T02:30:00Z",
+      totals: { request_count: 1, groups: [{ model: "x", request_count: 1 }] },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 1,
+          groups: [
+            { model: '<img src=x onerror="alert(1)">', request_count: 1, usage_usd: 0.01 },
+          ],
+        },
+      ],
+    })!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    assert.doesNotMatch(html, /<img src=x/);
+    assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  });
+
+  test("usage charts: legacy history renders no model tables", () => {
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: legacySnapshot(),
+      history: parseUsageHistory(legacyUsage30d)!,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    assert.doesNotMatch(html, /<table class="models">/);
+    // The charts themselves still render.
+    assert.match(html, /Week \(Oct 12 – Oct 16\)/);
+  });
+
+  test("usage charts: model table without tokens has no in/out column", () => {
+    // Groups present but no cost, no tokens (e.g. legacy-ranked requests).
+    const history = parseUsageHistory({
+      range: "30d",
+      granularity: "day",
+      from: "2026-10-13T00:00:00Z",
+      until: "2026-10-16T00:00:00Z",
+      totals: { request_count: 3, groups: [{ model: "m", request_count: 3 }] },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 3,
+          groups: [{ model: "m", request_count: 3 }],
+        },
+      ],
+    })!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    // Neither a cost column nor an in/out column: no "0 / 0" placeholders.
+    assert.match(
+      html,
+      /<th>Model<\/th><th class="num">Req<\/th><\/tr><\/thead>/,
+    );
+    assert.doesNotMatch(html, /<th class="num">\$<\/th>/);
+    assert.doesNotMatch(html, /<th class="num">in \/ out<\/th>/);
+    assert.match(
+      html,
+      /<td class="model">m<\/td><td class="num">3<\/td><\/tr>/,
     );
   });
 

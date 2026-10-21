@@ -131,6 +131,65 @@ suite("parse", () => {
     assert.equal(last.requestCount, 404);
   });
 
+  test("usage groups parsed from totals and buckets (tolerant)", () => {
+    const history = parseUsageHistory(usage30d)!;
+    // Totals groups keep the API rank (usage_usd desc).
+    const totalsModels = history!.totals.models!;
+    assert.deepEqual(
+      totalsModels.map((m) => m.model),
+      ["gpt-oss:120b", "glm-5.3-flash", "qwen3-coder:480b"],
+    );
+    assert.equal(totalsModels[0]!.requestCount, 880);
+    assert.equal(totalsModels[0]!.usageUsd, 4.2);
+
+    // Day buckets carry their own groups.
+    const monday = history!.days.find((d) => d.from.startsWith("2026-10-12"))!;
+    assert.equal(monday.groups!.length, 1);
+    assert.equal(monday.groups![0]!.model, "gpt-oss:120b");
+    assert.equal(monday.groups![0]!.usageUsd, 0.8);
+
+    // Malformed/mixed entries are dropped, valid ones kept.
+    const mixed = parseUsageHistory({
+      range: "7d",
+      granularity: "day",
+      from: "2026-10-10T00:00:00Z",
+      until: "2026-10-16T00:00:00Z",
+      totals: { request_count: 3 },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 3,
+          groups: [
+            { model: "gpt-oss:120b", request_count: 2, usage_usd: 0.01 },
+            { request_count: 5 },
+            { model: "", request_count: 5 },
+            { model: "m", request_count: -1 },
+            { model: "m", request_count: Number.NaN },
+            "junk",
+            null,
+          ],
+        },
+      ],
+    })!;
+    const day = mixed.days[0]!;
+    assert.equal(day.groups!.length, 1);
+    assert.equal(day.groups![0]!.model, "gpt-oss:120b");
+  });
+
+  test("usage without groups → no models (legacy payloads unaffected)", () => {
+    const history = parseUsageHistory(legacyUsage30d)!;
+    assert.ok(history);
+    assert.equal(history.totals.models, undefined);
+    assert.equal(history.days[0]!.groups, undefined);
+
+    const emptyGroups = parseUsageResponse({
+      totals: { request_count: 1, groups: [] },
+    });
+    assert.ok(emptyGroups);
+    assert.equal(emptyGroups.models, undefined);
+  });
+
   test("usage history: legacy totals (no cost/tokens) still parse", () => {
     const history = parseUsageHistory(legacyUsage30d);
     assert.ok(history);

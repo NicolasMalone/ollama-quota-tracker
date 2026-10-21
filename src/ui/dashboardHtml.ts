@@ -40,7 +40,7 @@
  * - No remote resources: all styles are inline, no fonts/images fetched.
  */
 
-import type { QuotaSnapshot, UsageHistory, UsagePoint } from "../types/quota";
+import type { QuotaSnapshot, UsageHistory, UsagePoint, ModelUsage } from "../types/quota";
 import type { TokenMeta } from "../services/TokenStore";
 import {
   formatLongStamp,
@@ -286,6 +286,8 @@ export interface UsageSlice {
   title: string;
   summary: string;
   days: UsagePoint[];
+  /** Per-model usage aggregated over the slice (cost-sorted). */
+  models: ModelUsage[];
 }
 
 /**
@@ -302,7 +304,7 @@ function usageSection(
   return slices.map((s) => sliceCard(s, opts)).join("\n");
 }
 
-/** One usage card with title, summary and day bars. */
+/** One usage card with title, summary, day bars and the model table. */
 function sliceCard(slice: UsageSlice, opts: DashboardHtmlOptions): string {
   return `<section class="card">
   <div class="meter-head">
@@ -310,6 +312,7 @@ function sliceCard(slice: UsageSlice, opts: DashboardHtmlOptions): string {
     <span class="meter-pct">${escapeHtml(slice.summary)}</span>
   </div>
   ${dayBars(slice.days, opts)}
+  ${modelsTable(slice.models)}
 </section>`;
 }
 
@@ -334,6 +337,7 @@ export function usageSlices(
       title: `Week (${windows.weekLabel})`,
       summary: summaryOf(week.days),
       days: week.days,
+      models: modelsOf(week.days),
     });
   }
   const month = sliceOf(history.days, windows.monthFrom, windows.until);
@@ -342,9 +346,92 @@ export function usageSlices(
       title: `Month (${windows.monthLabel})`,
       summary: summaryOf(month.days),
       days: month.days,
+      models: modelsOf(month.days),
     });
   }
   return slices;
+}
+
+/**
+ * Aggregates the per-model usage of one slice: sums the bucket `groups` by
+ * model name (the API re-ranks models per bucket, so the same group order
+ * cannot be assumed across buckets) and re-sorts client-side by cost (a
+ * slice may span a month boundary; the API order only covers its own range).
+ * Legacy slices without cost sort by request count instead.
+ */
+export function modelsOf(days: UsagePoint[]): ModelUsage[] {
+  const byModel = new Map<string, ModelUsage>();
+  for (const day of days) {
+    if (!day.groups) {
+      continue;
+    }
+    for (const group of day.groups) {
+      const current = byModel.get(group.model) ?? {
+        model: group.model,
+        requestCount: 0,
+      };
+      current.requestCount += group.requestCount;
+      if (group.usageUsd !== undefined) {
+        current.usageUsd = (current.usageUsd ?? 0) + group.usageUsd;
+      }
+      if (group.inputTokens !== undefined) {
+        current.inputTokens = (current.inputTokens ?? 0) + group.inputTokens;
+      }
+      if (group.outputTokens !== undefined) {
+        current.outputTokens =
+          (current.outputTokens ?? 0) + group.outputTokens;
+      }
+      byModel.set(group.model, current);
+    }
+  }
+  const models = [...byModel.values()];
+  // Same rank rule as the API: usage_usd when available, else requests.
+  const hasUsd = models.some((m) => m.usageUsd !== undefined);
+  models.sort((a, b) => {
+    const delta = hasUsd
+      ? (b.usageUsd ?? 0) - (a.usageUsd ?? 0)
+      : b.requestCount - a.requestCount;
+    // Stable tie-break so equal costs keep a deterministic order.
+    return delta !== 0 ? delta : a.model.localeCompare(b.model);
+  });
+  return models;
+}
+
+/**
+ * Renders the slice's model breakdown as a compact table under the day
+ * chart. Model names are remote text and always go through escapeHtml;
+ * when the slice carries no groups (legacy plans, or a parse that dropped
+ * them), the table is omitted entirely rather than rendering placeholders.
+ *
+ * Columns only carry the dimensions the API actually reported: legacy plans
+ * rank groups by request count only (no cost, no tokens), and even modern
+ * groups may omit tokens (web search/fetch usage). A fixed in/out column
+ * would show misleading "0 / 0" placeholders there, so both the cost and
+ * token columns appear only when at least one row has that data.
+ */
+function modelsTable(models: ModelUsage[]): string {
+  if (models.length === 0) {
+    return "";
+  }
+  const hasUsd = models.some((m) => m.usageUsd !== undefined);
+  const hasTokens = models.some(
+    (m) => m.inputTokens !== undefined || m.outputTokens !== undefined,
+  );
+  const rows = models
+    .map((m) => {
+      const cost = hasUsd
+        ? `<td class="num">$${fmtNum(m.usageUsd ?? 0)}</td>`
+        : "";
+      const tokens = hasTokens
+        ? `<td class="num">${fmtNum(m.inputTokens ?? 0)} / ${fmtNum(m.outputTokens ?? 0)}</td>`
+        : "";
+      return `<tr><td class="model">${escapeHtml(m.model)}</td><td class="num">${fmtNum(m.requestCount)}</td>${cost}${tokens}</tr>`;
+    })
+    .join("\n");
+  return `<table class="models">
+  <thead><tr><th>Model</th><th class="num">Req</th>${hasUsd ? '<th class="num">$</th>' : ""}${hasTokens ? '<th class="num">in / out</th>' : ""}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
 }
 
 /** Window boundaries for both slices, with their human labels. */
@@ -593,6 +680,13 @@ body {
   .days.dense .day-col:not(:nth-child(4n + 1)) .day-label { visibility: hidden; }
 }
 .days.dense .day-col.partial .day-label { visibility: visible; }
+/* Per-model table under each usage chart: light, right-aligned numerals. */
+table.models { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+table.models th { text-align: left; font-weight: 600; opacity: .65; padding: 2px 8px 4px 0; border-bottom: 1px solid var(--vscode-panel-border, #333); }
+table.models td { padding: 3px 8px 3px 0; border-bottom: 1px solid rgba(128,128,128,.15); overflow-wrap: anywhere; }
+table.models tr:last-child td { border-bottom: none; }
+table.models th.num, table.models td.num { text-align: right; white-space: nowrap; }
+table.models td.model { font-weight: 600; }
 .tokens-head { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .tokens-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 select, .btn {

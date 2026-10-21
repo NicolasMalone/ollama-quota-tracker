@@ -1,17 +1,13 @@
 import { Provider, type UsageHistoryProvider } from "./Provider";
-import {
-  parseBalanceResponse,
-  parseUsageHistory,
-  parseUsageResponse,
-} from "./parse";
+import { parseBalanceResponse, parseUsageHistory } from "./parse";
 import { QuotaError } from "../types/quota";
-import type { QuotaSnapshot, UsageHistory, UsageSummary } from "../types/quota";
+import type { QuotaSnapshot, UsageHistory } from "../types/quota";
 
 const BALANCE_URL = "https://ollama.com/api/balance";
-const USAGE_URL_24H = "https://ollama.com/api/usage?range=24h";
-const USAGE_URL_30D = "https://ollama.com/api/usage?range=30d";
+const USAGE_URL_30D = "https://ollama.com/api/usage?range=30d&group_by=model";
 
 export interface OllamaProviderDeps {
+  /** Reserved for future diagnostics; unused today. */
   log?: (message: string) => void;
 }
 
@@ -20,34 +16,19 @@ export interface OllamaProviderDeps {
  * Calls the documented endpoints (the caller supplies the Bearer key, taken
  * from the TokenStore):
  *   GET https://ollama.com/api/balance  (included + purchased credits, or legacy limits)
- *   GET https://ollama.com/api/usage?range=24h  (best-effort usage summary for the tooltip)
- *   GET https://ollama.com/api/usage?range=30d  (day buckets for the dashboard charts)
+ *   GET https://ollama.com/api/usage?range=30d&group_by=model
+ *     (day buckets for the dashboard charts + per-model usage breakdown)
  */
 export class OllamaProvider implements Provider, UsageHistoryProvider {
-  private readonly log: (message: string) => void;
-
-  constructor(deps: OllamaProviderDeps) {
-    this.log = deps.log ?? (() => undefined);
+  constructor(_deps?: OllamaProviderDeps) {
+    // No dependencies in use today; the signature stays for callers.
   }
 
   async getQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
     if (!apiKey) {
       throw new QuotaError("API key not configured");
     }
-    const balanceSnapshot = await this.fetchAndParseBalance(apiKey, signal);
-    try {
-      const usage = await this.fetchUsage(apiKey, signal);
-      if (usage) {
-        balanceSnapshot.usageLast24h = usage;
-      }
-    } catch (err) {
-      // Usage is best-effort: keep balance snapshot, log technical detail only.
-      const status = err instanceof QuotaError ? err.status : undefined;
-      this.log(
-        `Usage endpoint failed${status ? ` (HTTP ${status})` : ""}. Keeping balance-only tooltip.`,
-      );
-    }
-    return balanceSnapshot;
+    return this.fetchAndParseBalance(apiKey, signal);
   }
 
   /** GET /api/usage?range=30d for the dashboard charts (week + month). */
@@ -82,19 +63,6 @@ export class OllamaProvider implements Provider, UsageHistoryProvider {
       const body = await safeJson(res);
       const snapshot = parseBalanceResponse(body);
       return snapshot;
-    }
-    throw httpError(res);
-  }
-
-  /** GET /api/usage?range=24h; returns undefined if the body is not usable. */
-  private async fetchUsage(
-    apiKey: string,
-    signal?: AbortSignal,
-  ): Promise<UsageSummary | undefined> {
-    const res = await this.requestJson(USAGE_URL_24H, apiKey, signal);
-    if (res.ok) {
-      const body = await safeJson(res);
-      return parseUsageResponse(body);
     }
     throw httpError(res);
   }
