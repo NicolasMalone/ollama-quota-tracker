@@ -895,8 +895,10 @@ select { max-width: 100%; }
 function bridgeScript(): string {
   return `
 (function () {
-  var vscode = acquireVsCodeApi();
-  function post(msg) { vscode.postMessage(msg); }
+  /* Plain-browser fallback (README screenshots): without the webview API,
+   * posting is simply skipped — mount still runs. */
+  var vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+  function post(msg) { if (vscode) { vscode.postMessage(msg); } }
   function applyBars() {
     var i, el;
     var fills = document.querySelectorAll('.fill[data-w]');
