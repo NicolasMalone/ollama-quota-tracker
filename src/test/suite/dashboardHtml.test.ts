@@ -121,8 +121,17 @@ suite("dashboardHtml", () => {
     assert.equal(cols?.length, 12);
     assert.match(html, /class="day-col partial"/);
     // Bars are data-attribute measured, applied by the script (CSP-safe).
-    assert.match(html, /class="day-track"><div class="day-fill" data-h="100"/);
+    // With groups present every day stacks by model: the busiest day (Oct
+    // 15, 560 of max 560) is glm 79% + qwen 21% — boundaries top out at the
+    // plain fill's 100 (conservation: Σsegments = unstacked height). The
+    // bucket with zero requests keeps the plain fill path at data-h="0".
     assert.doesNotMatch(html, /style="height:/);
+    assert.match(html, /class="day-track"><div class="day-fill" data-h="0"><\/div>/);
+    assert.match(html, /class="day-seg pal-1" data-h="79"/);
+    assert.match(html, /class="day-seg pal-2" data-h="21"/);
+    // Oct 13: gpt 180 (32%) + glm 160 (boundary 340/560 → 61 − 32 = 29).
+    assert.match(html, /class="day-seg pal-0" data-h="32"/);
+    assert.match(html, /class="day-seg pal-1" data-h="29"/);
     // Responsive: each chart mirrors its bucket count for the dense-label
     // CSS (week=5, month=7 with this fixture → both stay non-dense).
     assert.match(html, /class="days" data-days="5"/);
@@ -222,6 +231,134 @@ suite("dashboardHtml", () => {
     });
     assert.doesNotMatch(html, /<img src=x/);
     assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  });
+
+  test("usage charts: stacked bars carry a colour legend per chart", () => {
+    const history = parseUsageHistory(usage30d)!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    // One legend per chart (week + month), chips in the same cost-sorted
+    // order as the stack and the model table; colour slots follow index.
+    const legends = html.match(/class="legend"/g);
+    assert.equal(legends?.length, 2);
+    const week = html.slice(html.indexOf("Week ("), html.indexOf("Month ("));
+    assert.match(
+      week,
+      /<span class="chip"><span class="sw pal-0"><\/span>gpt-oss:120b<\/span>/,
+    );
+    assert.match(
+      week,
+      /<span class="chip"><span class="sw pal-1"><\/span>glm-5\.3-flash<\/span>/,
+    );
+    assert.match(
+      week,
+      /<span class="chip"><span class="sw pal-2"><\/span>qwen3-coder:480b<\/span>/,
+    );
+    const first = week.indexOf("gpt-oss:120b", week.indexOf("legend"));
+    const second = week.indexOf("glm-5.3-flash", week.indexOf("legend"));
+    const third = week.indexOf("qwen3-coder:480b", week.indexOf("legend"));
+    assert.ok(
+      first > 0 && second > first && third > second,
+      "legend chips follow stack order",
+    );
+    // All request counts are covered by parsed groups → no grey "Other".
+    assert.doesNotMatch(week, /Other<\/span>/);
+  });
+
+  test("usage charts: unmatched requests fall into the grey Other slot", () => {
+    // API remainder (or dropped groups): bucket total exceeds its groups.
+    const history = parseUsageHistory({
+      range: "30d",
+      granularity: "day",
+      from: "2026-10-13T00:00:00Z",
+      until: "2026-10-16T00:00:00Z",
+      totals: { request_count: 10 },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 10,
+          groups: [{ model: "m", request_count: 7 }],
+        },
+      ],
+    })!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    // 7 grouped + 3 Other = the full 10-request bar (70% of max 10).
+    assert.match(html, /class="day-seg pal-0" data-h="70"/);
+    assert.match(html, /class="day-seg pal-8" data-h="30"/);
+    // The grey Other chip closes the legend.
+    assert.match(
+      html,
+      /<span class="chip"><span class="sw pal-8"><\/span>Other<\/span>/,
+    );
+  });
+
+  test("usage charts: legacy history keeps plain unstacked bars (no legend)", () => {
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: legacySnapshot(),
+      history: parseUsageHistory(legacyUsage30d)!,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    assert.doesNotMatch(html, /<table class="models">/);
+    assert.doesNotMatch(html, /class="legend"/);
+    // Plain blue fill measured the old way (30 of 30 → 100%).
+    assert.match(
+      html,
+      /class="day-track"><div class="day-fill" data-h="100"><\/div>/,
+    );
+    // The charts themselves still render.
+    assert.match(html, /Week \(Oct 12 – Oct 19\)/);
+  });
+
+  test("usage charts: legend names are escaped palette slots wrap past 8", () => {
+    // Nine models: slots 0..7 cycle, the ninth (cheapest) reuses slot 0.
+    const models = Array.from({ length: 9 }, (_, i) => ({
+      model: `<b>m${i}</b>`,
+      request_count: 9 - i,
+      usage_usd: (9 - i) / 100,
+    }));
+    const history = parseUsageHistory({
+      range: "30d",
+      granularity: "day",
+      from: "2026-10-13T00:00:00Z",
+      until: "2026-10-16T00:00:00Z",
+      totals: { request_count: 45, groups: models },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 45,
+          groups: models,
+        },
+      ],
+    })!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: creditsSnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    // Model names are remote text: escaped in the legend chips.
+    assert.match(html, /<span class="sw pal-0"><\/span>&lt;b&gt;m0&lt;\/b&gt;<\/span>/);
+    assert.doesNotMatch(html, /<b>m0<\/b>/);
+    // Palette wraps: the ninth model's legend swatch reuses slot 0.
+    const legend = html.slice(html.indexOf('<div class="legend"'));
+    assert.match(legend, /<span class="sw pal-7"><\/span>&lt;b&gt;m7&lt;\/b&gt;<\/span>/);
+    assert.match(legend, /<span class="sw pal-0"><\/span>&lt;b&gt;m8&lt;\/b&gt;<\/span>/);
   });
 
   test("usage charts: legacy history renders no model tables", () => {

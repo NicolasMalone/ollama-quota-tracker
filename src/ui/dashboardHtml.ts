@@ -331,12 +331,17 @@ function usageSection(
 
 /** One usage card with title, summary, day bars and the model table. */
 function sliceCard(slice: UsageSlice, opts: DashboardHtmlOptions): string {
+  // Stack order comes from the slice-level aggregate (the API re-ranks
+  // models per bucket, so bucket order is not consistent): the same sorted
+  // order feeds bars, legend and the model table.
+  const stack = stackOf(slice);
   return `<section class="card">
   <div class="meter-head">
     <span class="meter-title">${escapeHtml(slice.title)}</span>
     <span class="meter-pct">${escapeHtml(slice.summary)}</span>
   </div>
-  ${dayBars(slice.days, opts)}
+  ${dayBars(slice.days, opts, stack)}
+  ${chartLegend(stack)}
   ${modelsTable(slice.models)}
 </section>`;
 }
@@ -586,19 +591,25 @@ function summaryOf(days: UsagePoint[]): string {
 }
 
 /**
- * Pure CSS bar chart of daily request counts (no remote assets).
+ * Pure CSS bar chart of daily request counts (no remote assets), stacked
+ * by model when the slice carries per-model groups.
  *
- * The measured height lives on `.day-fill`, which sits inside a `.day-track`
- * area that excludes the label row. Without the track, a 100% bar (the
- * window's busiest day) resolves its percentage against the whole column,
- * overflows past the baseline and gets pushed below the other bars — so the
- * track is what keeps every column's fill bottom-aligned to the same line.
+ * The measured heights live on `.day-seg`/`.day-fill`, which sit inside a
+ * `.day-track` area that excludes the label row. Without the track, a 100%
+ * bar (the window's busiest day) resolves its percentage against the whole
+ * column, overflows past the baseline and gets pushed below the other bars
+ * — so the track is what keeps every column's fill bottom-aligned to the
+ * same line.
  *
  * Responsiveness: columns shrink with the panel (flex + min-width:0); long
  * windows also mark the chart `data-days` + `.dense` so the dense-label CSS
  * (every other / fourth tick on narrow panels) keeps it readable.
  */
-function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
+function dayBars(
+  days: UsagePoint[],
+  opts: DashboardHtmlOptions,
+  stack: StackSpec = { names: [], other: false },
+): string {
   if (days.length === 0) {
     return `<p class="muted">No daily usage recorded in this window.</p>`;
   }
@@ -607,13 +618,15 @@ function dayBars(days: UsagePoint[], opts: DashboardHtmlOptions): string {
     .map((d) => {
       const label = dayLabel(d, opts);
       // Clamp: never let a rounding edge push a fill over 100% of its track.
-      const hPct = Math.min(100, Math.round((d.requestCount / max) * 100));
+      const fill = stack.names.length
+        ? stackedTrack(d, stack, max)
+        : `<div class="day-fill" data-h="${Math.min(100, Math.round((d.requestCount / max) * 100))}"></div>`;
       const title = escapeHtml(
         `${label} — ${d.requestCount} requests` +
           (d.usageUsd !== undefined ? ` ($${fmtNum(d.usageUsd)})` : ""),
       );
       const partial = d.partial ? " partial" : "";
-      return `<div class="day-col${partial}" title="${title}"><div class="day-track"><div class="day-fill" data-h="${hPct}"></div></div><span class="day-label">${escapeHtml(label)}</span></div>`;
+      return `<div class="day-col${partial}" title="${title}"><div class="day-track">${fill}</div><span class="day-label">${escapeHtml(label)}</span></div>`;
     })
     .join("\n");
   // data-days mirrors the count into CSS (attr() can't feed a selector):
@@ -633,6 +646,116 @@ function dayLabel(d: UsagePoint, opts: DashboardHtmlOptions): string {
   // The stamp is "Oct 4 at 12:00 AM"; the chart only wants the date part.
   const at = stamp.indexOf(" at ");
   return at > 0 ? stamp.slice(0, at) : stamp;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Stacking by model                                                         */
+/* ------------------------------------------------------------------------ */
+
+/* Chart palette: fixed colour slots shared by the stacked day bars and the
+ * legend. Slots 0…7 cycle when a slice has more models than colours; slot 8
+ * is the reserved grey "Other" for requests outside the parsed groups. */
+const PALETTE_SLOTS = 8;
+const OTHER_SLOT = 8;
+
+/** Stacking spec of one chart: slice-level model order (index → colour
+ * slot) plus whether any bucket holds requests its parsed groups don't
+ * account for. */
+interface StackSpec {
+  /** Model names, most-used (same sort as the model table) first. */
+  names: string[];
+  /** True when some bucket's total exceeds the sum of its parsed groups. */
+  other: boolean;
+}
+
+/** Stack spec of a slice: the aggregated model names in their sorted order
+ * (the API re-ranks groups per bucket, so this is the only stable order)
+ * plus an "Other" flag when any day is bigger than the sum of its parsed
+ * groups (API `remainder`, dropped groups). */
+function stackOf(slice: UsageSlice): StackSpec {
+  const names = slice.models.map((m) => m.model);
+  const other = slice.days.some((d) => {
+    const grouped = (d.groups ?? []).reduce(
+      (acc, g) => acc + g.requestCount,
+      0,
+    );
+    return d.requestCount > grouped;
+  });
+  return { names, other };
+}
+
+/**
+ * Builds one day's stacked column: segments bottom-up in the slice's model
+ * order, each measured as the rounded cumulative share of the day's total
+ * against the chart max — the topmost boundary equals the plain bar's
+ * height, so stacked columns line up with legacy (unstacked) ones and the
+ * visible bar still matches the `title`'s total. Requests outside the
+ * bucket's parsed groups (API `remainder`, dropped groups) land in the grey
+ * "Other" slot so no request goes missing from the column.
+ */
+function stackedTrack(d: UsagePoint, stack: StackSpec, max: number): string {
+  const counts = new Map<string, number>(
+    stack.names.map((n) => [n, 0] as [string, number]),
+  );
+  let grouped = 0;
+  for (const g of d.groups ?? []) {
+    grouped += g.requestCount;
+    const known = counts.get(g.model);
+    if (known !== undefined) {
+      counts.set(g.model, known + g.requestCount);
+    }
+  }
+  const other = Math.max(0, d.requestCount - grouped);
+  const slots: { slot: number; count: number }[] = [];
+  stack.names.forEach((name, i) => {
+    const count = counts.get(name) ?? 0;
+    if (count > 0) {
+      slots.push({ slot: i % PALETTE_SLOTS, count });
+    }
+  });
+  if (other > 0) {
+    slots.push({ slot: OTHER_SLOT, count: other });
+  }
+  if (slots.length === 0) {
+    return `<div class="day-fill" data-h="0"></div>`;
+  }
+  const segs: string[] = [];
+  let prev = 0;
+  let running = 0;
+  for (const { slot, count } of slots) {
+    running += count;
+    // Rounded cumulative boundary: the last one is exactly the plain fill
+    // height (min(round(count/max*100), 100)), so the column keeps its size.
+    const boundary = Math.min(100, Math.round((running / max) * 100));
+    segs.push(
+      `<div class="day-seg pal-${slot}" data-h="${boundary - prev}"></div>`,
+    );
+    prev = boundary;
+  }
+  return segs.join("\n");
+}
+
+/**
+ * Colour legend under a stacked chart: one chip (swatch + name) per model,
+ * same order as the stack segments; the grey "Other" slot closes the row
+ * when some buckets hold requests their parsed groups don't account for.
+ * Model names are remote text and always go through escapeHtml. Rendered
+ * only when the slice has models at all (legacy plans keep the plain bars).
+ */
+function chartLegend(stack: StackSpec): string {
+  if (stack.names.length === 0) {
+    return "";
+  }
+  const chips = stack.names.map(
+    (name, i) =>
+      `<span class="chip"><span class="sw pal-${i % PALETTE_SLOTS}"></span>${escapeHtml(name)}</span>`,
+  );
+  if (stack.other) {
+    chips.push(
+      `<span class="chip"><span class="sw pal-${OTHER_SLOT}"></span>Other</span>`,
+    );
+  }
+  return `<div class="legend">${chips.join("\n")}</div>`;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -701,10 +824,32 @@ body {
    label width), so any window length fits inside the card at any panel
    width; the labels shrink and ellipsize within their column. */
 .day-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; }
-/* Track = column minus the label row; caps bars so 100% can't overflow. */
-.day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; width: 100%; }
+/* Track = column minus the label row; caps bars so 100% can't overflow.
+   Also the bottom-anchored flex column that stacks the per-model segments. */
+.day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
 .day-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--vscode-charts-blue, #4aa3ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
 .day-col.partial .day-fill { opacity: .45; }
+/* Stacked charts: each segment is a plain flex child (measured via data-h
+   like the legacy fill). A tiny share that rounds to 0 keeps a 1px sliver,
+   and only the topmost segment carries the bar's rounded cap. */
+.day-seg { width: 100%; flex: none; height: 0; min-height: 1px; opacity: .85; }
+.day-seg:last-child { border-radius: 2px 2px 0 0; }
+.day-col.partial .day-seg { opacity: .45; }
+/* Colour slots shared by stacked segments and legend swatches (0-7 cycle,
+   8 is the reserved grey "Other"). Fallbacks match VS Code's palette. */
+.pal-0 { background: var(--vscode-charts-blue, #4aa3ff); }
+.pal-1 { background: var(--vscode-charts-orange, #d18616); }
+.pal-2 { background: var(--vscode-charts-green, #89d185); }
+.pal-3 { background: var(--vscode-charts-purple, #b180d7); }
+.pal-4 { background: var(--vscode-charts-red, #f14c4c); }
+.pal-5 { background: var(--vscode-charts-yellow, #cca700); }
+.pal-6 { background: #3aa1bf; }
+.pal-7 { background: #d76fa8; }
+.pal-8 { background: var(--vscode-charts-lines, #646465); }
+/* Legend under a stacked chart: swatch + model name chips, wrapping. */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 11px; }
+.legend .chip { display: inline-flex; align-items: center; overflow-wrap: anywhere; }
+.legend .sw { width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; box-shadow: 0 0 0 1px rgba(127,127,127,.45); }
 .day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 /* Dense charts (15+ buckets) thin their ticks only while the panel is too
    narrow to carry one label (≈40px) per column; visibility (not display)
@@ -762,6 +907,11 @@ function bridgeScript(): string {
     var dayFills = document.querySelectorAll('.day-fill[data-h]');
     for (i = 0; i < dayFills.length; i++) {
       el = dayFills[i];
+      el.style.height = el.getAttribute('data-h') + '%';
+    }
+    var daySegs = document.querySelectorAll('.day-seg[data-h]');
+    for (i = 0; i < daySegs.length; i++) {
+      el = daySegs[i];
       el.style.height = el.getAttribute('data-h') + '%';
     }
   }
