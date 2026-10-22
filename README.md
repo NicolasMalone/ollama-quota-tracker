@@ -4,15 +4,17 @@ Displays your remaining **Ollama Cloud** quota in the VS Code status bar.
 
 ![Status bar with the Ollama Quota indicator](media/statusbar.png)
 
+![Expanded status view](media/statushover.png)
+
 > **Note:** this extension is not affiliated with Ollama. It is an independent project, and it tracks **Ollama Cloud quota only** — other AI services are out of scope.
 
 ## Features
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
-- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month with a per-model usage breakdown, and token management. Charts adapt to narrow panels.
+- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management. On plans with model data the chart bars are **stacked by model** with a colour legend, alongside a per-model usage breakdown. Charts adapt to narrow panels.
 
-Dashboard (credits plan — meters, week/month usage charts with per-model tables and the token selector):
+Dashboard (credits plan — meters, week/month charts stacked by model with a colour legend, per-model tables and the token selector):
 
 ![Dashboard on the credits plan: included credits meter, active week and active month charts with per-model tables, token selector](media/dashboard-credits.png)
 
