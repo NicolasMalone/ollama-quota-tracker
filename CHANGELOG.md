@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.9.0...v0.10.0) (2026-10-22)
+
+### Features
+
+* **dashboard:** stack daily bars by model with colour legend ([59e3755](https://github.com/NicolasMalone/ollama-quota-tracker/commit/59e375530095016c8348f5f8721a62b35b0ba863))
+
+### Documentation
+
+* **readme:** add expanded status screenshot and document stacked charts ([33d5f42](https://github.com/NicolasMalone/ollama-quota-tracker/commit/33d5f42162164cf6598b171200791ba968c89215))
+* **readme:** regenerate credits dashboard screenshot at 2x DPI ([35cd9e3](https://github.com/NicolasMalone/ollama-quota-tracker/commit/35cd9e3f317986e09630d7e83f9cbb185436a623))
+* **readme:** regenerate legacy dashboard screenshot at 2x DPI ([b2f7b20](https://github.com/NicolasMalone/ollama-quota-tracker/commit/b2f7b20bf4593b80b56696f2c09c81ef6a05b099))
+
 ## [0.9.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.8.1...v0.9.0) (2026-10-21)
 
 ### Features
