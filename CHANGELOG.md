@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.10.0...v0.11.0) (2026-10-23)
+
+### Features
+
+* **ui:** unify display mode and tier colours across every view ([6df8a35](https://github.com/NicolasMalone/ollama-quota-tracker/commit/6df8a35d8cd88489bc7e8e114dc67456495b0454))
+
+### Documentation
+
+* **readme:** refresh screenshots and document the new views ([d8f19b6](https://github.com/NicolasMalone/ollama-quota-tracker/commit/d8f19b656c2cdeb7691bb474dcef49998f55f5d5))
+
 ## [0.10.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.9.0...v0.10.0) (2026-10-22)
 
 ### Features
