@@ -4,15 +4,15 @@ Displays your remaining **Ollama Cloud** quota in the VS Code status bar.
 
 ![Status bar with the Ollama Quota indicator](media/statusbar.png)
 
-![Expanded status view](media/statushover.png)
+![Expanded status view: the hover tooltip with one block per quota window, a continuous bar per window and the reset stamps](media/statushover.png)
 
 > **Note:** this extension is not affiliated with Ollama. It is an independent project, and it tracks **Ollama Cloud quota only** — other AI services are out of scope.
 
 ## Features
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
-- Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option.
-- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management. On plans with model data the chart bars are **stacked by model** with a colour legend, alongside a per-model usage breakdown. Charts adapt to narrow panels.
+- Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option — the setting drives the hover tooltip and the dashboard meters too, so every view shows and fills the same percentage.
+- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management. On plans with model data the chart bars are **stacked by model** with a colour legend (a model keeps its colour across charts and refreshes), alongside a per-model usage breakdown. Charts adapt to narrow panels: a full month is ticked with the bare day number in every column (the card title carries the month) and thins down to the anchors — the 1st, the Mondays, the busiest day and today — before dropping labels, while days without requests render a neutral tick instead of a bar.
 
 Dashboard (credits plan — meters, week/month charts stacked by model with a colour legend, per-model tables and the token selector):
 
@@ -24,7 +24,8 @@ Dashboard (legacy plan — session/weekly meters; usage charts carry no model ta
 
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip and dashboard timestamps (resets, update times, chart labels) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.
-- Detailed tooltip: a per-window table (session and week, or credits) with usage, remaining, and reset times, plus the purchased balance and footer links. On the legacy plan the session row (tooltip and dashboard) also shows the compact time to reset, e.g. `5h 23m left`.
+- **Hover tooltip**: one block per quota window — the window name with the percentage the setting selects, a continuous bar that fills with that very number, and a muted line carrying the reset stamp plus the compact time to reset (e.g. `5h 23m left`) and, on credits, the exact spent/total balance. Footer links open the dashboard or refresh on the spot.
+- **One colour language across views**: a window's bar and its percentage always share a single tier — blue while the remaining quota is above `ollamaQuota.warnThreshold`, yellow at or below it and red at half of it — and the same rule paints the tooltip and the dashboard meters, so the percentage you read never disagrees with the bar you see.
 - Configurable auto-refresh (60 s by default; 0 = disabled; values below 30 s are clamped to 30 to protect the rate limit).
 - Keeps the last valid value if a query fails (per token: stale data from a previous token is never shown for the current one).
 
@@ -40,8 +41,8 @@ Dashboard (legacy plan — session/weekly meters; usage charts carry no model ta
 | Option | Default | Description |
 | --- | --- | --- |
 | `ollamaQuota.refreshInterval` | `60` | Polling interval in seconds (0 = disabled; values below 30 are clamped to 30 to protect the shared rate limit). |
-| `ollamaQuota.displayMode` | `used` | Displayed percentage: `used` (consumed) or `remaining` (left). |
-| `ollamaQuota.warnThreshold` | `20` | ⚠ icon when the remaining % is less than or equal to this value. |
+| `ollamaQuota.displayMode` | `used` | Displayed percentage: `used` (consumed) or `remaining` (left) — mirrored by the status bar, the tooltip's hero line + bar, and the dashboard meters. |
+| `ollamaQuota.warnThreshold` | `20` | Remaining-quota boundary for the bar colours: above it bars and percentages stay blue, at or below it they turn yellow, and red once the remaining quota falls to half of it. The ⚠ status-bar icon uses the same boundary. |
 | `ollamaQuota.tooltipTimeFormat` | `auto` | Hour format of the tooltip timestamps (`auto` = editor locale, or force `12h` / `24h`). |
 
 ## Releases
