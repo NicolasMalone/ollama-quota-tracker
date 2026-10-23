@@ -23,12 +23,21 @@ import fs from "node:fs";
 const require = createRequire(import.meta.url);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const { buildDashboardHtml } = require(path.join(root, "out", "ui", "dashboardHtml.js"));
-const { parseBalanceResponse, parseUsageHistory } = require(path.join(root, "out", "providers", "parse.js"));
-const { creditsBalance, legacyBalance, usage30d } = require(path.join(root, "out", "test", "suite", "fixtures.js"));
+const { buildDashboardHtml } = require(
+  path.join(root, "out", "ui", "dashboardHtml.js"),
+);
+const { parseBalanceResponse, parseUsageHistory } = require(
+  path.join(root, "out", "providers", "parse.js"),
+);
+const { creditsBalance, legacyBalance, usage30d } = require(
+  path.join(root, "out", "test", "suite", "fixtures.js"),
+);
 
 const NONCE = "abc123";
-const TOKENS = [{ id: "t1", name: "Personal" }, { id: "t2", name: "Work" }];
+const TOKENS = [
+  { id: "t1", name: "Personal" },
+  { id: "t2", name: "Work" },
+];
 
 /** Render clock of the legacy capture. Matches scripts/hover-shot.mjs, so the
  * tooltip and the dashboard screenshots in the README describe the SAME
@@ -46,8 +55,8 @@ const LEGACY_NOW_ISO = "2026-10-23T10:18:00Z";
 function legacyUsage() {
   // One count per closed day, Sep 24 .. Oct 22 (29 days, oldest first).
   const counts = [
-    0, 24, 61, 43, 0, 18, 92, 74, 55, 130, 41, 0, 87, 96, 62,
-    150, 38, 21, 110, 84, 49, 67, 0, 35, 121, 58, 91, 143, 44,
+    0, 24, 61, 43, 0, 18, 92, 74, 55, 130, 41, 0, 87, 96, 62, 150, 38, 21, 110,
+    84, 49, 67, 0, 35, 121, 58, 91, 143, 44,
   ];
   const start = Date.parse("2026-09-24T00:00:00Z");
   const day = 86_400_000;
@@ -112,7 +121,9 @@ const variants = [
       // render clock (it would read "Resets any moment now."); the capture
       // shows an in-flight period instead, like the tooltip preview does.
       patch: (snap) => {
-        snap.credits.resetsAt = new Date(CREDITS_NOW + 9 * 86_400_000).toISOString();
+        snap.credits.resetsAt = new Date(
+          CREDITS_NOW + 9 * 86_400_000,
+        ).toISOString();
       },
     }),
   },
@@ -143,7 +154,13 @@ const puppeteer = require("puppeteer-core");
 function findChrome() {
   const candidates = [
     process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe")
+      ? path.join(
+          process.env.LOCALAPPDATA,
+          "Google",
+          "Chrome",
+          "Application",
+          "chrome.exe",
+        )
       : null,
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
@@ -174,7 +191,10 @@ try {
     });
     await page.goto("file:///" + htmlPath.replace(/\\/g, "/"));
     await new Promise((r) => setTimeout(r, 400));
-    await page.screenshot({ path: path.join(root, "media", file), fullPage: true });
+    await page.screenshot({
+      path: path.join(root, "media", file),
+      fullPage: true,
+    });
     await page.close();
     fs.rmSync(htmlPath, { force: true });
     console.log("saved", file);

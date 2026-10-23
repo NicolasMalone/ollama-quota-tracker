@@ -18,7 +18,9 @@ import fs from "node:fs";
 const require = createRequire(import.meta.url);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const { buildTooltipMarkdown } = require(path.join(root, "out", "ui", "tooltip.js"));
+const { buildTooltipMarkdown } = require(
+  path.join(root, "out", "ui", "tooltip.js"),
+);
 
 const NOW = Date.parse("2026-10-23T10:18:00Z");
 
@@ -64,7 +66,7 @@ function inline(md) {
   return md
     .replace(/\$\(cloud\)/g, CLOUD)
     .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
-    .replace(/\[([^\]]+)\]\(command:[^)]*\)/g, "<a href=\"#\">$1</a>");
+    .replace(/\[([^\]]+)\]\(command:[^)]*\)/g, '<a href="#">$1</a>');
 }
 
 function mdToHtml(markdown) {
@@ -127,7 +129,13 @@ const puppeteer = require("puppeteer-core");
 function findChrome() {
   const candidates = [
     process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe")
+      ? path.join(
+          process.env.LOCALAPPDATA,
+          "Google",
+          "Chrome",
+          "Application",
+          "chrome.exe",
+        )
       : null,
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
