@@ -54,7 +54,7 @@ import {
   formatShortStamp,
   type TimeFormatSetting,
 } from "./timeFormat";
-import { timeRemaining } from "./tooltip";
+import { timeRemaining, remainingTier, type DisplayMode } from "./tooltip";
 
 /* Message names sent by the webview script to the host (keep in sync with
  * Dashboard.ts). Exported so controller and tests share the constants. */
@@ -74,6 +74,14 @@ export interface DashboardHtmlOptions {
   loading: boolean;
   error?: string;
   timeFormat: TimeFormatSetting;
+  /** Which percentage the quota meters label and fill with: consumed
+   * ("used", the default) or "remaining". The SAME status-bar setting
+   * drives the hover tooltip, so both views stay one visual identity. */
+  displayMode?: DisplayMode;
+  /** The `ollamaQuota.warnThreshold` setting: the healthy/yellow boundary
+   * of the shared `remainingTier` classifier (same value the status bar
+   * and the hover tooltip use). Default 50 (the legacy fixed boundary). */
+  warnThreshold?: number;
   /** Test seam: Date.now() injected as number; absent means render stamp-only. */
   now?: number;
   /** Per-document CSP nonce; %%NONCE%% placeholders are replaced by it. */
@@ -161,27 +169,62 @@ function snapshotStamp(opts: DashboardHtmlOptions): string {
 
 function meterBlock(
   title: string,
-  usageText: string,
-  rightText: string,
-  usedPct: number,
+  /** Extra fact for the subtitle — money balance for credits, absent for
+   * percentage windows (the right label IS the percentage; repeating it
+   * muted under the bar would be redundant). */
+  usageText: string | undefined,
+  shownPct: number,
+  remainingPct: number,
+  warnThreshold: number,
   resetText?: string,
 ): string {
   // The width lives in data-w and is applied by the nonce-protected script:
   // VS Code webviews strip inline style attributes despite the CSP nonce.
+  // The TIER class (ok/warn/crit) colors fill + label with the same
+  // traffic-light mapping the hover uses — one visual language. The fill
+  // is BLUE while healthy and only turns yellow/red past the threshold
+  // (see the `.fill.tier-*` rules), and the label follows the fill colour.
+  // Tiering ALWAYS runs on the REMAINING percentage (in either display
+  // mode), so a window's color never flips when the setting does; the
+  // warn boundary is the warn threshold setting (shared with the hover).
+  const tier = remainingTier(clamp(remainingPct), warnThreshold);
+  // The meter FILLS with the metric the right label shows (`displayMode`);
+  // the hover's bar does the same, so a setting flip moves both views
+  // together and number ↔ bar always agree inside each view.
+  // The subtitle says only what the meter does NOT: money balances for
+  // credits, reset info — the percentage itself is already the right
+  // label, so percentage windows skip it (no redundant "N% used" under a
+  // bar that fills with that very number; same rule the hover applies).
+  const subParts = [usageText, resetText].filter(Boolean) as string[];
+  const sub = subParts.length
+    ? `<div class="meter-sub">${subParts.map(escapeHtml).join(" — ")}</div>`
+    : "";
   return `<div class="meter-row">
   <div class="meter-head">
     <span class="meter-title">${escapeHtml(title)}</span>
-    <span class="meter-pct">${escapeHtml(rightText)}</span>
+    <span class="meter-pct tier-${tier}">${escapeHtml(pctLabel(shownPct))}</span>
   </div>
-  <div class="bar"><div class="fill" data-w="${clamp(usedPct)}"></div></div>
-  <div class="meter-sub">${escapeHtml(usageText)}${resetText ? ` — ${escapeHtml(resetText)}` : ""}</div>
+  <div class="bar"><div class="fill tier-${tier}" data-w="${clamp(shownPct)}"></div></div>
+  ${sub}
 </div>`;
+}
+
+/**
+ * The percentage the quota meters LABEL and FILL with: the setting picks
+ * the side of the quota, the tier keeps classifying REMAINING. Mirrors the
+ * status-bar hero and the hover's hero line (same math, same default).
+ */
+function shownPct(mode: DisplayMode, leftPct: number): number {
+  const pct = Math.min(100, Math.max(0, leftPct));
+  return mode === "remaining" ? pct : 100 - pct;
 }
 
 function windowsSection(
   snapshot: QuotaSnapshot,
   opts: DashboardHtmlOptions,
 ): string {
+  const mode = opts.displayMode ?? "used";
+  const warnThreshold = opts.warnThreshold ?? 50;
   const rows: string[] = [];
   if (snapshot.mode === "credits" && snapshot.credits) {
     const c = snapshot.credits;
@@ -189,8 +232,9 @@ function windowsSection(
       meterBlock(
         "Included credits",
         usedLabel(c.used, c.limit),
-        pctLabel(100 - c.percentage),
-        pct(100 - c.percentage),
+        shownPct(mode, c.percentage),
+        c.percentage,
+        warnThreshold,
         resetsIn(c.resetsAt, opts),
       ),
     );
@@ -209,9 +253,10 @@ function windowsSection(
       rows.push(
         meterBlock(
           "Session",
-          pctLabel(100 - s.percentage),
-          pctLabel(100 - s.percentage),
-          pct(100 - s.percentage),
+          undefined,
+          shownPct(mode, s.percentage),
+          s.percentage,
+          warnThreshold,
           resetText,
         ),
       );
@@ -221,9 +266,10 @@ function windowsSection(
       rows.push(
         meterBlock(
           "Weekly limit",
-          pctLabel(100 - w.percentage),
-          pctLabel(100 - w.percentage),
-          pct(100 - w.percentage),
+          undefined,
+          shownPct(mode, w.percentage),
+          w.percentage,
+          warnThreshold,
           resetsIn(w.resetsAt, opts),
         ),
       );
@@ -284,12 +330,9 @@ function usedLabel(used: number, limit: number): string {
   return `$${fmtNum(used)} of $${fmtNum(limit)}`;
 }
 
-function pct(v: number): number {
-  return clamp(v);
-}
-
+/** Right-head meter label; the number is the metric `displayMode` selects. */
 function pctLabel(v: number): string {
-  return `${Math.round(clamp(v))}% used`;
+  return `${Math.round(clamp(v))}%`;
 }
 
 function clamp(v: number): number {
@@ -602,8 +645,14 @@ function summaryOf(days: UsagePoint[]): string {
  * same line.
  *
  * Responsiveness: columns shrink with the panel (flex + min-width:0); long
- * windows also mark the chart `data-days` + `.dense` so the dense-label CSS
- * (every other / fourth tick on narrow panels) keeps it readable.
+ * windows also mark the chart `data-days` + `.dense`.
+ *
+ * Dense charts (a month, 15+ buckets) swap the "Oct 14" tick for the bare
+ * DAY NUMBER: the card title already carries the month, and two digits fit
+ * one tick per column down to ~500px, so the whole calendar stays scannable
+ * instead of every-other/every-fourth ticks. Those two digits are only
+ * dropped, anchor by anchor, once the panel is too narrow: first everything
+ * but the anchors (day 1, the busiest day, today), then the Mondays.
  */
 function dayBars(
   days: UsagePoint[],
@@ -614,27 +663,74 @@ function dayBars(
     return `<p class="muted">No daily usage recorded in this window.</p>`;
   }
   const max = Math.max(...days.map((d) => d.requestCount), 1);
+  const dense = days.length >= 15;
+  // The busiest CLOSED bucket is the chart's magnitude reference, so it keeps
+  // its tick when the narrow-panel CSS thins the rest out. The open bucket is
+  // excluded: a half-recorded day must not claim to be the window's peak.
+  let peakIndex = -1;
+  days.forEach((d, i) => {
+    if (d.partial || d.requestCount <= 0) {
+      return;
+    }
+    if (peakIndex < 0 || d.requestCount > days[peakIndex].requestCount) {
+      peakIndex = i;
+    }
+  });
   const bars = days
-    .map((d) => {
+    .map((d, i) => {
+      // `label` is the full date ("Oct 14", or "today" for the open bucket)
+      // and always feeds the title; dense charts only shorten the TICK.
       const label = dayLabel(d, opts);
+      const cal = bucketDay(d);
+      const tick = dense ? (d.partial ? label : String(cal.day)) : label;
+      // Calendar/priority anchors: they survive the narrow-panel thinning,
+      // so the month can always be located by "the 1st", a Monday, the
+      // busiest day and today.
+      const anchor = dense
+        ? `${cal.day === 1 ? " one" : ""}${cal.weekday === 1 ? " mon" : ""}${i === peakIndex ? " peak" : ""}`
+        : "";
+      // A bucket with no requests is NOT a (1px) blue bar: fills keep a
+      // `min-height` sliver so tiny shares stay visible, which would paint
+      // a chart-coloured line on an idle day and read as "a little usage".
+      // Idle days get their own neutral marker (`.day-zero`) instead — a
+      // muted tick on the baseline, i.e. "zero", not "some blue".
       // Clamp: never let a rounding edge push a fill over 100% of its track.
-      const fill = stack.names.length
-        ? stackedTrack(d, stack, max)
-        : `<div class="day-fill" data-h="${Math.min(100, Math.round((d.requestCount / max) * 100))}"></div>`;
+      const fill =
+        d.requestCount === 0
+          ? `<div class="day-zero"></div>`
+          : stack.names.length
+            ? stackedTrack(d, stack, max)
+            : `<div class="day-fill" data-h="${Math.min(100, Math.round((d.requestCount / max) * 100))}"></div>`;
       const title = escapeHtml(
-        `${label} — ${d.requestCount} requests` +
-          (d.usageUsd !== undefined ? ` ($${fmtNum(d.usageUsd)})` : ""),
+        d.requestCount === 0
+          ? `${label} — no requests`
+          : `${label} — ${d.requestCount} requests` +
+              (d.usageUsd !== undefined ? ` ($${fmtNum(d.usageUsd)})` : ""),
       );
       const partial = d.partial ? " partial" : "";
-      return `<div class="day-col${partial}" title="${title}"><div class="day-track">${fill}</div><span class="day-label">${escapeHtml(label)}</span></div>`;
+      const idle = d.requestCount === 0 ? " zero" : "";
+      return `<div class="day-col${partial}${idle}${anchor}" title="${title}"><div class="day-track">${fill}</div><span class="day-label">${escapeHtml(tick)}</span></div>`;
     })
     .join("\n");
   // data-days mirrors the count into CSS (attr() can't feed a selector):
   // from 15 buckets the chart gets the `.dense` label-thinning treatment.
-  const dense = days.length >= 15 ? " dense" : "";
+  const denseCls = dense ? " dense" : "";
   // The width lives in data-w/data-h and is applied by the nonce-protected
   // script (VS Code webviews strip inline style attributes in markup).
-  return `<div class="days${dense}" data-days="${days.length}">${bars}</div>`;
+  return `<div class="days${denseCls}" data-days="${days.length}">${bars}</div>`;
+}
+
+/**
+ * Calendar fields of a bucket. The API's day buckets are UTC-aligned, so the
+ * anchors are read in UTC (a local-midnight conversion could shift a bucket
+ * across a day boundary and put Monday's tick on the wrong column).
+ */
+function bucketDay(d: UsagePoint): { day: number; weekday: number } {
+  const date = new Date(d.from);
+  if (!Number.isFinite(date.getTime())) {
+    return { day: 0, weekday: 0 };
+  }
+  return { day: date.getUTCDate(), weekday: date.getUTCDay() };
 }
 
 /** Day label of a bucket, e.g. `Oct 4`; today's partial bucket says today. */
@@ -653,14 +749,61 @@ function dayLabel(d: UsagePoint, opts: DashboardHtmlOptions): string {
 /* ------------------------------------------------------------------------ */
 
 /* Chart palette: fixed colour slots shared by the stacked day bars and the
- * legend. Slots 0…7 cycle when a slice has more models than colours; slot 8
- * is the reserved grey "Other" for requests outside the parsed groups. */
+ * legend. A model's slot comes from a deterministic hash of its name, so a
+ * model keeps the same colour across charts (Week/Month), refreshes and
+ * slices even though each slice ranks models differently. Collisions (two
+ * visible models hashing to the same slot) are resolved inside the slice by
+ * probing forward in model order. Slot 8 is the reserved grey "Other" for
+ * requests outside the parsed groups. */
 const PALETTE_SLOTS = 8;
 const OTHER_SLOT = 8;
 
-/** Stacking spec of one chart: slice-level model order (index → colour
- * slot) plus whether any bucket holds requests its parsed groups don't
- * account for. */
+/** FNV-1a hash of a model name, reduced to a palette slot. Deterministic
+ * across refreshes/platforms (pure string ops, Math.imul 32-bit wraparound) —
+ * the only colouring scheme that keeps a model's swatch stable without
+ * persisted per-name state. */
+function paletteSlot(name: string): number {
+  let hash = 0x811c9dc5;
+  for (const ch of name) {
+    hash ^= ch.codePointAt(0)!;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash % PALETTE_SLOTS;
+}
+
+/** Colour slot per model name, resolved once per slice (chartLegend and
+ * every stacked day column of that slice share the same mapping, so
+ * segments and legend chips always agree and the probe runs a single
+ * time). Colliding names take the first free slot walking forward in
+ * model order — deterministic for a given model set, and it only touches
+ * the colliding models, so the common no-collision case is a pure name →
+ * colour lookup. */
+function slotMap(stack: StackSpec): Map<string, number> {
+  const slots = new Map<string, number>();
+  const taken = new Set<number>();
+  for (const name of stack.names) {
+    if (taken.size >= PALETTE_SLOTS) {
+      // More models than colours: latecomers share a slot (the old rank
+      // wrap did the same) so the probe below never deadlocks on a full
+      // palette. Name order means the least-used models share first.
+      slots.set(name, paletteSlot(name));
+      continue;
+    }
+    let slot = paletteSlot(name);
+    while (taken.has(slot)) {
+      // Probe forward past slots taken by earlier models (higher usage,
+      // since the stack sorts that way), wrapping at the palette end.
+      slot = (slot + 1) % PALETTE_SLOTS;
+    }
+    slots.set(name, slot);
+    taken.add(slot);
+  }
+  return slots;
+}
+
+/** Stacking spec of one chart: slice-level model order (name → hashed
+ * colour slot) plus whether any bucket holds requests its parsed groups
+ * don't account for. */
 interface StackSpec {
   /** Model names, most-used (same sort as the model table) first. */
   names: string[];
@@ -706,18 +849,21 @@ function stackedTrack(d: UsagePoint, stack: StackSpec, max: number): string {
     }
   }
   const other = Math.max(0, d.requestCount - grouped);
+  const assigned = slotMap(stack);
   const slots: { slot: number; count: number }[] = [];
-  stack.names.forEach((name, i) => {
+  stack.names.forEach((name) => {
     const count = counts.get(name) ?? 0;
     if (count > 0) {
-      slots.push({ slot: i % PALETTE_SLOTS, count });
+      slots.push({ slot: assigned.get(name)!, count });
     }
   });
   if (other > 0) {
     slots.push({ slot: OTHER_SLOT, count: other });
   }
   if (slots.length === 0) {
-    return `<div class="day-fill" data-h="0"></div>`;
+    // Defensive: a day with no measurable segments renders the same neutral
+    // idle marker the plain path uses (never a chart-coloured sliver).
+    return `<div class="day-zero"></div>`;
   }
   const segs: string[] = [];
   let prev = 0;
@@ -746,9 +892,10 @@ function chartLegend(stack: StackSpec): string {
   if (stack.names.length === 0) {
     return "";
   }
+  const assigned = slotMap(stack);
   const chips = stack.names.map(
-    (name, i) =>
-      `<span class="chip"><span class="sw pal-${i % PALETTE_SLOTS}"></span>${escapeHtml(name)}</span>`,
+    (name) =>
+      `<span class="chip"><span class="sw pal-${assigned.get(name)}"></span>${escapeHtml(name)}</span>`,
   );
   if (stack.other) {
     chips.push(
@@ -817,9 +964,26 @@ body {
   background: rgba(128,128,128,.25); overflow: hidden;
 }
 .fill { height: 100%; width: 0; border-radius: 4px; background: var(--vscode-charts-blue, #4aa3ff); }
+/* Traffic-light tiers — the SAME mapping the hover tooltip uses
+ * (remainingTier: ok > warnThreshold / warn > threshold/2 / else crit,
+ * colors = theme chart tokens) so both views read identically.
+ * The HEALTHY tier is BLUE (neutral, same as the day bars) instead of
+ * green: the meter stays calm while there is room left and only turns
+ * yellow/red once the threshold is crossed, where the warning matters.
+ * The percentage label follows the BAR exactly (blue → yellow → red), so
+ * a window's number and its fill are always the same colour. */
+.fill.tier-ok { background: var(--vscode-charts-blue, #4aa3ff); }
+.fill.tier-warn { background: var(--vscode-charts-yellow, #cca700); }
+.fill.tier-crit { background: var(--vscode-charts-red, #f14c4c); }
+.meter-pct.tier-ok { color: var(--vscode-charts-blue, #4aa3ff); font-weight: 600; }
+.meter-pct.tier-warn { color: var(--vscode-charts-yellow, #cca700); font-weight: 600; }
+.meter-pct.tier-crit { color: var(--vscode-charts-red, #f14c4c); font-weight: 600; }
 .meter-sub { opacity: .7; font-size: 12px; overflow-wrap: anywhere; }
-/* Fluid: gap and chart height scale with the panel width. */
+/* Fluid: gap and chart height scale with the panel width. Dense charts (a
+   month) get a taller track: more segments to resolve and a flatter profile
+   to read. */
 .days { display: flex; align-items: flex-end; gap: clamp(2px, .8vw, 6px); height: clamp(72px, 18vw, 120px); margin-top: 14px; }
+.days.dense { height: clamp(96px, 20vw, 148px); }
 /* min-width: 0 drops the column's implicit min-content floor (the nowrap
    label width), so any window length fits inside the card at any panel
    width; the labels shrink and ellipsize within their column. */
@@ -829,6 +993,16 @@ body {
 .day-track { position: relative; flex: 1; min-height: 0; overflow: hidden; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
 .day-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--vscode-charts-blue, #4aa3ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
 .day-col.partial .day-fill { opacity: .45; }
+/* Idle day (zero requests): a thin muted tick pinned to the baseline instead
+   of a chart-coloured bar, so "no usage" never reads as a sliver of blue.
+   Neutral foreground (not a palette slot) keeps it out of the legend's
+   language and identical in every theme. */
+.day-zero {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  border-radius: 1px;
+  background: var(--vscode-disabledForeground, rgba(128,128,128,.55));
+  opacity: .55;
+}
 /* Stacked charts: each segment is a plain flex child (measured via data-h
    like the legacy fill). A tiny share that rounds to 0 keeps a 1px sliver,
    and only the topmost segment carries the bar's rounded cap. */
@@ -851,16 +1025,33 @@ body {
 .legend .chip { display: inline-flex; align-items: center; overflow-wrap: anywhere; }
 .legend .sw { width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; box-shadow: 0 0 0 1px rgba(127,127,127,.45); }
 .day-label { font-size: 10px; opacity: .6; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-/* Dense charts (15+ buckets) thin their ticks only while the panel is too
-   narrow to carry one label (≈40px) per column; visibility (not display)
-   keeps every column equally wide. "today" always stays visible. */
-@media (max-width: 780px) {
-  .days.dense .day-col:not(:nth-child(2n)) .day-label { visibility: hidden; }
+/* Dense charts tick with the bare day number, so one glyph pair is enough:
+   a touch smaller keeps two digits inside a ~13px column at 560px. */
+.days.dense .day-label { font-size: 9.5px; letter-spacing: -.2px; }
+/* Idle day: the tick + a dimmer label say "nothing here" at a glance. */
+.day-col.zero .day-label { opacity: .35; }
+/* Dense charts (15+ buckets) print one DAY NUMBER per column (the card title
+   names the month), so the full calendar stays scannable instead of showing
+   every other/every fourth tick. Two digits fit down to ~600px; under that
+   the ticks are dropped anchor by anchor — first everything except the
+   calendar references (the 1st, the busiest day, today), then the Mondays.
+   visibility (not display) keeps every column equally wide. */
+@media (max-width: 620px) {
+  .days.dense .day-col:not(.one):not(.mon):not(.peak):not(.partial) .day-label { visibility: hidden; }
 }
-@media (max-width: 440px) {
-  .days.dense .day-col:not(:nth-child(4n + 1)) .day-label { visibility: hidden; }
+@media (max-width: 460px) {
+  .days.dense .day-col.mon .day-label { visibility: hidden; }
 }
-.days.dense .day-col.partial .day-label { visibility: visible; }
+/* Anchor ticks read slightly brighter than the rest. The busiest day (the
+   chart's only magnitude reference) is emphasised with weight + full
+   opacity rather than a colour: chart colours belong to the model palette. */
+.days.dense .day-col.one .day-label,
+.days.dense .day-col.mon .day-label { opacity: .85; }
+.days.dense .day-col.peak .day-label { opacity: 1; font-weight: 600; }
+/* The open bucket is always the LAST column, so its word never fits a day
+   number's width: direction:rtl anchors it to the column's right edge and
+   lets the text spill LEFT over the chart instead of clipping to "to…". */
+.days.dense .day-col.partial .day-label { visibility: visible; overflow: visible; direction: rtl; opacity: .8; }
 /* Per-model table under each usage chart: light, right-aligned numerals. */
 table.models { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
 table.models th { text-align: left; font-weight: 600; opacity: .65; padding: 2px 8px 4px 0; border-bottom: 1px solid var(--vscode-panel-border, #333); }

@@ -2,6 +2,7 @@ import { strict as assert } from "assert";
 import {
   buildTooltipMarkdown,
   escapeCell,
+  escapeHtml,
   timeRemaining,
 } from "../../ui/tooltip";
 import type { QuotaSnapshot } from "../../types/quota";
@@ -50,29 +51,43 @@ function legacySnapshot(overrides: Partial<QuotaSnapshot> = {}): QuotaSnapshot {
   };
 }
 
-suite("tooltip — table layout", () => {
-  test("credits: money columns and reset cell", () => {
+suite("tooltip — window blocks layout", () => {
+  test("credits: used mode (default) shows the consumed % and a used-filled bar", () => {
     const md = buildTooltipMarkdown(creditsSnapshot(), { timeFormat: "12h" });
 
-    // Header: bold title (plan suffix omitted — the API has no plan name).
-    assert.match(md, /^\*\*Ollama Quota\*\*\n\n/);
+    // Header: theme icon + bold title (plan suffix omitted — the API has no
+    // plan name).
+    assert.match(md, /^\$\(cloud\) \*\*Ollama Quota\*\*\n\n/);
 
-    // One header row + one align row + one data row.
-    const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
-    assert.equal(tableRows.length, 3, "header + align + 1 data row");
-
-    // Header labels, separated by &nbsp; gutters.
+    // One window block: 60% remaining → tier ok. The DEFAULT mode is
+    // "used" (status-bar parity), so the hero reads the consumed side and
+    // the nested bar fills the SAME metric: ONE track span (chart-line
+    // grey) containing ONE fill span butted to its left edge. Number and
+    // bar share the colour, and the healthy tier is BLUE (not green).
     assert.match(
-      tableRows[0]!,
-      /^\|(&nbsp;){2}Window(&nbsp;){2}\|(&nbsp;){2}Usage(&nbsp;){2}\|(&nbsp;){2}Remaining(&nbsp;){2}\|(&nbsp;){2}Reset(&nbsp;){2}\|$/,
+      md,
+      /<div>Credits ▸ — <span style="color:var\(--vscode-charts-blue\)"><b>40%<\/b><\/span><\/div>/,
     );
-
-    // Credits row: primary marker, money usage, remaining money, reset stamp.
-    const row = tableRows[2]!;
-    assert.match(row, /Credits ▸/);
-    assert.match(row, /\$1\.2 \/ \$3 · 40 %/);
-    assert.match(row, /\$1\.8 · 60 %/);
-    assert.match(row, /\|(&nbsp;){3,}\w{3} \d{1,2} at \d/);
+    const trackChips =
+      md.match(
+        /<span style="background-color:var\(--vscode-charts-lines\);/g,
+      ) ?? [];
+    assert.equal(trackChips.length, 1, "one grey track span wrapping the fill");
+    // 40% used of the 64-unit bar: 26 units in the fill, 38 left in the
+    // track — the dashboard meter renders the same fill for this window.
+    const trackSpan = md.match(
+      /<span style="background-color:var\(--vscode-charts-lines\);[^>]*">((?:&nbsp;|<span [^>]*>|<\/span>)*)<\/span>/,
+    )![1];
+    const fillSpan = trackSpan.match(
+      /background-color:var\(--vscode-charts-blue\);[^>]*">((?:&nbsp;)*)<\/span>/,
+    )![1];
+    const fillUnits = fillSpan.length / "&nbsp;".length;
+    const plainUnits = trackSpan.match(/(?:&nbsp;)/g)!.length - fillUnits;
+    assert.equal(fillUnits, 26, "fill 40% used of 64 units");
+    assert.equal(plainUnits, 38, "track carries the remaining 38 units");
+    // Credits keeps the money line (the exact balance is nowhere else);
+    // no redundant "N% used" under the bar.
+    assert.match(md, /\$1\.2 of \$3 used · resets \w{3} \d{1,2} at \d/);
 
     // Purchased note (credits only) and footer links; no 24h line anywhere.
     assert.match(md, /_Purchased: \$5_\n\n/);
@@ -83,13 +98,41 @@ suite("tooltip — table layout", () => {
     );
   });
 
+  test("credits: displayMode remaining flips hero number AND bar together", () => {
+    // Same window (60% remaining) viewed in "remaining" mode: hero 60% and
+    // the fill grows to 38 units — number ↔ bar stay paired (unlike the
+    // pre-parity fill, which always represented the remaining side).
+    const md = buildTooltipMarkdown(creditsSnapshot(), {
+      timeFormat: "12h",
+      displayMode: "remaining",
+    });
+    assert.match(
+      md,
+      /<div>Credits ▸ — <span style="color:var\(--vscode-charts-blue\)"><b>60%<\/b><\/span><\/div>/,
+    );
+    const trackSpan = md.match(
+      /<span style="background-color:var\(--vscode-charts-lines\);[^>]*">((?:&nbsp;|<span [^>]*>|<\/span>)*)<\/span>/,
+    )![1];
+    const fillSpan = trackSpan.match(
+      /background-color:var\(--vscode-charts-blue\);[^>]*">((?:&nbsp;)*)<\/span>/,
+    )![1];
+    assert.equal(
+      fillSpan.length / "&nbsp;".length,
+      38,
+      "fill 60% remaining of 64 units",
+    );
+  });
+
   test("token name renders neutralised in the header when provided", () => {
     const md = buildTooltipMarkdown(creditsSnapshot(), {
       timeFormat: "auto",
       tokenName: "Per|sonal<script>",
     });
     // `|`, `<` and `>` become dashes (same rule as any remote text).
-    assert.match(md, /^\*\*Ollama Quota\*\* — Per-sonal-script-\n\n/m);
+    assert.match(
+      md,
+      /^\$\(cloud\) \*\*Ollama Quota\*\* — Per-sonal-script-\n\n/m,
+    );
   });
 
   test("credits: footer shows Updated and the command links", () => {
@@ -103,34 +146,113 @@ suite("tooltip — table layout", () => {
     );
   });
 
-  test("legacy: session primary (▸), week follows, percentage columns", () => {
-    // Clock injected so the session row's time-to-reset is deterministic:
+  test("legacy: session primary block (▸), week follows, tiers per window", () => {
+    // Clock injected so the session block's time-to-reset is deterministic:
     // session reset Oct 15 12:00Z viewed from Oct 15 06:37Z → 5h 23m left.
     const md = buildTooltipMarkdown(legacySnapshot(), {
       timeFormat: "12h",
       now: Date.parse("2026-10-15T06:37:00Z"),
     });
-    const tableRows = md.split("\n").filter((l) => l.startsWith("|"));
-    assert.equal(tableRows.length, 4, "header + align + 2 data rows");
 
-    // Data cells carry &nbsp; gutters. Session: 30% used → 70% remaining.
-    // Week: 80% used → 20% remaining; the Week row shows only the absolute
-    // stamp.
+    // Session: 70% remaining → 30% used. Default "used" mode: the hero
+    // reads the consumed side and the bar fills 19 of 64 units. Healthy
+    // tier, so the hero number and the bar are both BLUE.
     assert.match(
-      tableRows[2]!,
-      /&nbsp;Session ▸&nbsp;\|&nbsp;30 %&nbsp;\|&nbsp;70 %&nbsp;\|(&nbsp;)+\w{3} \d{1,2} at \d.*&nbsp;· 5h 23m left/,
+      md,
+      /<div>Session ▸ — <span style="color:var\(--vscode-charts-blue\)"><b>30%<\/b><\/span><\/div>/,
     );
+    const sessionSpan = md.match(
+      /<span style="background-color:var\(--vscode-charts-lines\);[^>]*">((?:&nbsp;|<span [^>]*>|<\/span>)*)<\/span>/,
+    )![1];
+    const sessionFill = sessionSpan.match(
+      /background-color:var\(--vscode-charts-blue\);[^>]*">((?:&nbsp;)*)<\/span>/,
+    )![1];
+    assert.equal(
+      sessionFill.length / "&nbsp;".length,
+      19,
+      "fill 30% used of 64 units",
+    );
+    // The subtitle carries ONLY the reset info: the percentage is the hero
+    // line, repeating it muted under the bar was redundant.
     assert.match(
-      tableRows[3]!,
-      /&nbsp;Week&nbsp;\|&nbsp;80 %&nbsp;\|&nbsp;20 %&nbsp;\|/,
+      md,
+      /resets \w{3} \d{1,2} at \d{1,2}:\d{2} [AP]M · 5h 23m left/,
     );
-    assert.doesNotMatch(tableRows[3]!, /left/);
+    assert.doesNotMatch(md, /30% used/);
+
+    // Week: 20% remaining → 80% used, tier crit (red — the tier tracks the
+    // REMAINING side even in used mode). Default "used" mode shows the
+    // consumed side (80%) with the bar filled 51 of 64 units. No suffix.
+    const weekIdx = md.indexOf(">Week");
+    const updatedIdx = md.indexOf("_Updated");
+    assert.ok(weekIdx > -1 && updatedIdx > weekIdx, "Week block before footer");
+    const weekSection = md.slice(weekIdx, updatedIdx);
+    assert.match(
+      weekSection,
+      />Week — <span style="color:var\(--vscode-charts-red\)"><b>80%<\/b><\/span><\/div>/,
+    );
+    // The sub is now JUST the stamp (the "80% used" prefix is gone — that
+    // number is the hero line).
+    assert.match(weekSection, /resets \w{3}/);
+    assert.doesNotMatch(weekSection, /80% used/);
+    assert.doesNotMatch(weekSection, /left/);
+  });
+
+  test("warnThreshold drives the hero/bar color: blue > threshold", () => {
+    // Credits 60% remaining (40% used). With threshold 70 the window sits
+    // BELOW the healthy zone (60 ≤ 70) → yellow, number AND bar together.
+    const yellow = buildTooltipMarkdown(creditsSnapshot(), {
+      timeFormat: "auto",
+      warnThreshold: 70,
+    });
+    assert.match(
+      yellow,
+      /<span style="color:var\(--vscode-charts-yellow\)"><b>40%<\/b><\/span>/,
+    );
+    assert.match(yellow, /background-color:var\(--vscode-charts-yellow\);/);
+    // With threshold 20 the same window sits above the boundary
+    // (60% remaining > 20) → healthy, so number AND bar are BLUE.
+    const healthy = buildTooltipMarkdown(creditsSnapshot(), {
+      timeFormat: "auto",
+      warnThreshold: 20,
+    });
+    assert.match(
+      healthy,
+      /<span style="color:var\(--vscode-charts-blue\)"><b>40%<\/b><\/span>/,
+    );
+    assert.match(healthy, /background-color:var\(--vscode-charts-blue\);/);
+  });
+
+  test("warnThreshold ladder: blue > 20, yellow ≤ 20, crit ≤ 10", () => {
+    // Yellow: 15% remaining with threshold 20 → warn (half of threshold).
+    const snap = legacySnapshot();
+    snap.weekly!.percentage = 15;
+    const warn = buildTooltipMarkdown(snap, {
+      timeFormat: "auto",
+      warnThreshold: 20,
+    });
+    const weekIdx = warn.indexOf(">Week");
+    assert.match(
+      warn.slice(weekIdx),
+      /<span style="color:var\(--vscode-charts-yellow\)"><b>85%<\/b><\/span>/,
+    );
+    // Crit: 10% remaining with threshold 20 (boundary at 20/2 = 10).
+    snap.weekly!.percentage = 10;
+    const crit = buildTooltipMarkdown(snap, {
+      timeFormat: "auto",
+      warnThreshold: 20,
+    });
+    const critIdx = crit.indexOf(">Week");
+    assert.match(
+      crit.slice(critIdx),
+      /<span style="color:var\(--vscode-charts-red\)"><b>90%<\/b><\/span>/,
+    );
   });
 
   test("unknown mode: no table, message and footer only", () => {
     const snapshot = creditsSnapshot({ mode: "unknown", credits: undefined });
     const md = buildTooltipMarkdown(snapshot, { timeFormat: "auto" });
-    assert.doesNotMatch(md, /^\|/m);
+    assert.doesNotMatch(md, /<table>/);
     assert.match(md, /Unknown response shape from the Ollama API\./);
     assert.match(md, /_Updated /);
     // Purchased note is credits-only.
@@ -149,7 +271,7 @@ suite("tooltip — table layout", () => {
     const snapshot = creditsSnapshot({ plan: "pro|plan`" });
     // Remote text must come out sanitised: `|` and `` ` `` become dashes.
     const md = buildTooltipMarkdown(snapshot, { timeFormat: "auto" });
-    assert.match(md, /^\*\*Ollama Quota\*\* — pro-plan-\n\n/m);
+    assert.match(md, /^\$\(cloud\) \*\*Ollama Quota\*\* — pro-plan-\n\n/m);
   });
 });
 
@@ -184,6 +306,58 @@ suite("tooltip — sanitising (escapeCell)", () => {
     // The tooltip is rendered with isTrusted=true; any link in it must be ours.
     assert.doesNotMatch(md, /\[Activate\]/);
     assert.match(md, /'Activate''command:workbench\.action\.openSettings'/);
+  });
+});
+
+suite("tooltip — sanitising (escapeHtml, HTML table cells)", () => {
+  test("markup characters become entities", () => {
+    assert.equal(escapeHtml("a&b<c>d\"e'f"), "a&amp;b&lt;c&gt;d&quot;e&#39;f");
+  });
+
+  test("a full tag injection comes out inert", () => {
+    assert.equal(
+      escapeHtml("<img src=x onerror=alert(1)>"),
+      "&lt;img src=x onerror=alert(1)&gt;",
+    );
+  });
+
+  test("newlines collapse so no cell can forge rows", () => {
+    assert.equal(escapeHtml("a\nb\r\nc"), "a b c");
+  });
+
+  test("plain text is untouched (stamp format is never altered)", () => {
+    const stamp = "Nov 1 at 1:00 AM";
+    assert.equal(escapeHtml(stamp), stamp);
+  });
+
+  test("remote token name cannot break out of a table cell", () => {
+    const snapshot = creditsSnapshot({
+      mode: "legacy",
+      session: {
+        used: NaN,
+        limit: NaN,
+        remaining: NaN,
+        percentage: 70,
+        resetsAt: "2026-10-15T12:00:00Z",
+      },
+      weekly: {
+        used: NaN,
+        limit: NaN,
+        remaining: NaN,
+        percentage: 20,
+        resetsAt: "2026-10-17T10:00:00Z",
+      },
+    });
+    // Window names are extension constants, but exercise the path anyway:
+    // any remote-ish text reaching an HTML cell must stay entity-escaped.
+    const md = buildTooltipMarkdown(snapshot, {
+      timeFormat: "auto",
+      tokenName: '</td><td onclick="x">',
+    });
+    // The header is a markdown context → escapeCell dashes. No raw <td
+    // from remote text anywhere in the output.
+    assert.doesNotMatch(md, /<td onclick/);
+    assert.match(md, /-\/td--td onclick="x"-/);
   });
 });
 

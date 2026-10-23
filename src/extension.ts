@@ -84,6 +84,8 @@ export async function activate(
     provider,
     getStoreState: () => store.get(),
     getTimeFormat,
+    getDisplayMode,
+    getWarnThreshold,
     refreshNow: () => refreshService.refreshNow(),
     log: (m) => log.info(m),
   });

@@ -13,6 +13,7 @@ import {
   MSG_SELECT_TOKEN,
 } from "./dashboardHtml";
 import type { TimeFormatSetting } from "./timeFormat";
+import type { DisplayMode } from "./tooltip";
 import { promptAddToken } from "./tokenFlow";
 
 export interface DashboardDeps {
@@ -21,6 +22,13 @@ export interface DashboardDeps {
   /** Latest store state (status-bar mirror); provides stale snapshots. */
   getStoreState: () => RefreshState;
   getTimeFormat: () => TimeFormatSetting;
+  /** Which meter percentage to label/fill: consumed or remaining (the
+   * same setting the status bar and tooltip honor). */
+  getDisplayMode: () => DisplayMode;
+  /** The `ollamaQuota.warnThreshold` setting: the healthy/yellow boundary
+   * of the shared tier classifier (same value the status bar and hover
+   * use, so the three views agree on when a window turns yellow). */
+  getWarnThreshold: () => number;
   /** Runs a manual refresh of the ACTIVE token (RefreshService). */
   refreshNow: () => Thenable<boolean>;
   log?: (message: string) => void;
@@ -42,6 +50,8 @@ export class Dashboard implements vscode.Disposable {
   private readonly provider: Provider & Partial<UsageHistoryProvider>;
   private readonly getStoreState: () => RefreshState;
   private readonly getTimeFormat: () => TimeFormatSetting;
+  private readonly getDisplayMode: () => DisplayMode;
+  private readonly getWarnThreshold: () => number;
   private readonly refreshNow: () => Thenable<boolean>;
   private readonly log: (message: string) => void;
   private panel: vscode.WebviewPanel | undefined;
@@ -61,6 +71,8 @@ export class Dashboard implements vscode.Disposable {
     this.provider = deps.provider;
     this.getStoreState = deps.getStoreState;
     this.getTimeFormat = deps.getTimeFormat;
+    this.getDisplayMode = deps.getDisplayMode;
+    this.getWarnThreshold = deps.getWarnThreshold;
     this.refreshNow = deps.refreshNow;
     this.log = deps.log ?? (() => undefined);
   }
@@ -323,6 +335,8 @@ export class Dashboard implements vscode.Disposable {
       loading: extra.loading ?? false,
       error: extra.error,
       timeFormat: this.getTimeFormat(),
+      displayMode: this.getDisplayMode(),
+      warnThreshold: this.getWarnThreshold(),
       nonce: this.panelNonce,
     });
   }

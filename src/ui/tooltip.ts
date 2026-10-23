@@ -5,15 +5,16 @@
  * API (the test host cannot import `vscode`). The renderer produces a plain
  * markdown string; StatusBar wraps it in a `MarkdownString`.
  *
- * Layout (one row per quota window; VS Code renders GFM tables in hovers):
+ * Layout (one block per quota window; blocks are raw HTML — enabled with
+ * `supportHtml` — so they can carry theme-colored percentage spans and the
+ * continuous meter bar):
  *
- *   **Ollama Quota**
+ *   $(cloud) **Ollama Quota** — token · plan
  *
- *   | Window | Usage | Remaining | Reset |
- *   |:-------|------:|----------:|:------|
- *   | Credits ▸ | $1.20 / $3.00 · 58 % | $1.80 · 42 % | Nov 1 at 2:00 AM |
- *   | Session ▸ | 30 % | 70 % | Nov 1 at 12:00 AM · 5h 23m left |
- *   | Week | 80 % | 20 % | Nov 5 at 10:00 AM |
+ *   <blocks> per window: `Name ▸ — N%` (tier-colored), a continuous
+ *   bar over a grey track (BLUE while healthy, tier-colored once the
+ *   threshold is crossed; fill = the % displayMode selects),
+ *   and a muted `X% used · resets <stamp · time-left>` line </blocks>
  *
  *   _Purchased: $5.00_
  *
@@ -21,12 +22,23 @@
  *   [Configure key](command:...)_
  *
  * Design decisions:
+ * - One block per quota window: `Name ▸ — N%` hero line (tier-colored),
+ *   a continuous bar that fills with the metric `displayMode` selects
+ *   (mirroring `StatusBar`), and a muted subtitle (usage + reset).
+ * - `remainingTier` is the shared traffic-light classifier the dashboard
+ *   imports, so both views tint a window identically. Number and BAR share
+ *   ONE colour per tier: blue while healthy (same neutral blue as the
+ *   dashboard meter) and yellow/red only past the warn threshold.
+ * - Markdown contexts (header, notes, footer) stay pure-md and keep
+ *   `escapeCell`; only the HTML blocks render `supportHtml` markup. The
+ *   hover wrapper still runs with `isTrusted = { enabledCommands }`, so
+ *   command links are limited to the extension's own commands even if a
+ *   cell were to craft markup.
+ * - Remote text in HTML cells goes through `escapeHtml` (entity escaping,
+ *   newlines folded); window names and stamps are extension-generated.
  * - `▸` suffixes the primary window (the one mirrored in the status bar);
  *   there is no separate summary line, so nothing is duplicated.
- * - Remote text is neutralised per cell (pipes, backticks and newlines
- *   would break the table); timestamp formats are NOT altered
- *   (timeFormat.ts).
- * - Command links live in the footer, which is outside the table.
+ * - Command links live in the footer, which is outside the blocks.
  */
 
 import type { QuotaSnapshot } from "../types/quota";
@@ -36,8 +48,21 @@ import {
   type TimeFormatSetting,
 } from "./timeFormat";
 
+/** Which side of the quota a percentage reads: consumed or left. Shared
+ * with the dashboard so the status bar setting drives BOTH views (the
+ * hover and every dashboard meter label + bar fill). */
+export type DisplayMode = "used" | "remaining";
+
 export interface TooltipOptions {
   timeFormat: TimeFormatSetting;
+  /** Which percentage the hero line label and the bar represent
+   * (mirrors of the status bar's `displayMode`). Default `used`. */
+  displayMode?: DisplayMode;
+  /** The `ollamaQuota.warnThreshold` setting: the boundary between the
+   * healthy (blue) and yellow tiers for the bar/pct colors (drives the
+   * shared `remainingTier` classifier in BOTH views). Default 50 (the
+   * legacy fixed boundary). */
+  warnThreshold?: number;
   /** Optional note shown as a warning line (e.g. stale-data note). */
   errorNote?: string;
   /** Name of the active (named) token, shown in the header when set. */
@@ -55,34 +80,11 @@ export const CMD_DASHBOARD = "ollamaQuota.openDashboard";
 /* Cell sanitising                                                          */
 /* ------------------------------------------------------------------------ */
 
-/** Fallback for cells whose source value is missing. */
-const CELL_EMPTY = "—";
-
 /**
- * Column gutters as `&nbsp;` HTML entities. Raw U+00A0 characters would sit
- * at the cell edges, where the GFM table parser trims white-space (its trim
- * includes U+00A0), so they never reach the renderer. The entity is plain
- * ASCII in the markdown source — it survives any trimming — and is decoded
- * into a non-breaking space only when the hover HTML is emitted, spacing
- * out the otherwise glued columns (e.g. "Usage Remaining", "Remaining Reset").
- */
-const PAD = "&nbsp;";
-/** Double gutter inside header cells (wider than data cells). */
-const PAD2 = PAD + PAD;
-/** Extra left gutter inside the Reset column, so the stamp never crowds
- * the remaining-percentage cell next to it. */
-const RESET_PAD = PAD.repeat(3);
-
-/**
- * Sanitises remote text for inclusion in a GFM table cell: pipes would end
- * the cell early, backticks would open code spans and newlines would forge
- * extra rows. Bracket/paren/`!` characters are neutralised too — they are
- * markdown link/image syntax and the tooltip is published with
- * `isTrusted = true` (the footer renders `command:` links), so remote text
- * must never be able to forge a link of its own. Neutralised by REPLACEMENT
- * (never truncated, never deleted). The `▸` primary marker is stripped from
- * remote text too, so no cell can fake being the primary one. Plain text
- * (e.g. formatted stamps) passes through untouched.
+ * Sanitises remote text for markdown contexts (header, purchased note,
+ * error note): neutralises tables/links/code-span syntax and the `▸`
+ * marker by REPLACEMENT (never truncated). HTML cells use `escapeHtml`
+ * instead — entity escaping, so nothing is remapped to look altered.
  */
 export function escapeCell(s: string): string {
   return s
@@ -92,26 +94,146 @@ export function escapeCell(s: string): string {
     .trim();
 }
 
+/**
+ * HTML-escapes text for a tooltip table cell: `& < > " '` become entities
+ * (cells are `supportHtml` markup, so entity escaping is the defence; tags,
+ * attributes or entities crafted from remote text can never appear raw),
+ * newlines collapse so a cell cannot forge extra rows. Plain text such as
+ * formatted stamps passes through byte-for-byte (timeFormat is never
+ * altered).
+ */
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/\r?\n/g, " ")
+    .split("")
+    .map((c) => {
+      switch (c) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return c;
+      }
+    })
+    .join("")
+    .trim();
+}
+
 export function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
 }
 
 /* ------------------------------------------------------------------------ */
-/* Renderer                                                                  */
+/* Severity tiers + hover HTML primitives                                    */
 /* ------------------------------------------------------------------------ */
 
+/** Muted secondary text (reset stamps, used text). */
+const MUTED = `color:var(--vscode-descriptionForeground)`;
+
 /**
- * Builds the tooltip markdown for a snapshot (GFM table layout).
+ * Traffic-light tier for a REMAINING percentage. Shared with the dashboard
+ * (`dashboardHtml.ts` colors its meter fills/pcts through this) so both
+ * views classify windows identically. The boundaries follow the
+ * `ollamaQuota.warnThreshold` setting (read by extension.ts and handed to
+ * both renderers): the HEALTHY tier (rendered blue) while the remaining %
+ * is strictly ABOVE the threshold, YELLOW at or below it, RED once
+ * remaining falls to at most HALF the threshold (escala con el setting:
+ * threshold 10 → red below 5).
+ * Colors themselves stay in the consumers — always `var(--vscode-charts-*)`
+ * theme tokens, never raw hexes.
+ */
+export type Tier = "ok" | "warn" | "crit";
+
+export function remainingTier(leftPct: number, warnThreshold = 50): Tier {
+  const warnAt = Math.max(0, Math.min(100, warnThreshold));
+  if (leftPct > warnAt) {
+    return "ok";
+  }
+  if (leftPct > warnAt / 2) {
+    return "warn";
+  }
+  return "crit";
+}
+
+/**
+ * Theme-token color per tier, shared by the hero PERCENTAGE and the bar
+ * fill so a window's number and its meter are always the same colour (the
+ * two views share this exact mapping). The healthy tier is BLUE — the same
+ * neutral blue as the dashboard's day bars — so the meter stays calm while
+ * there is room left and only turns yellow/red once the warn threshold is
+ * crossed, where the warning carries information. Kept in sync with the
+ * dashboard CSS (`.fill.tier-*` / `.meter-pct.tier-*`).
+ */
+const TIER_VAR: Record<Tier, string> = {
+  ok: "var(--vscode-charts-blue)",
+  warn: "var(--vscode-charts-yellow)",
+  crit: "var(--vscode-charts-red)",
+};
+
+/** Track chip color: the theme's chart-line grey (also the chart greys). */
+const TRACK = "var(--vscode-charts-lines)";
+
+/**
+ * Total bar width in `&nbsp;` units. Wide enough to be the tooltip's
+ * longest line (the hover auto-sizes to its widest content, so a dominant
+ * bar renders edge to edge like the dashboard meter), narrow enough to stay
+ * under the hover max-width. 64 units ≈ 290px at the default UI font.
+ */
+const BAR_UNITS = 64;
+
+/**
+ * The continuous bar — the hover-safe clone of the dashboard meter
+ * (`div.bar > div.fill`): ONE grey rounded track span (`--vscode-charts-`
+ * track colour, full width in `&nbsp;` units) with ONE rounded fill span
+ * (blue while healthy, tier-colored past the threshold) butted to its left
+ * edge (width ∝ the shown %) INSIDE the track.
+ *
+ * The nesting is what makes the boundary read like the webview: the fill's
+ * rounded right cap shows TRACK GREY through its corner notches instead of
+ * the hover background, so there is no jagged seam — the same optical
+ * effect as the dashboard's percent fill over its track. (Flat side-by-side
+ * pills show the hover BACKGROUND in those notches — the hard seam that
+ * was complained about; a genuine `width:%` continuous bar is impossible
+ * because the hover style allowlist accepts only color, background-color,
+ * display:inline-block and border-radius on spans.)
+ */
+function segBar(shownPct: number, tierVar: string): string {
+  const filled = Math.round((clampPct(shownPct) / 100) * BAR_UNITS);
+  const fill =
+    filled > 0
+      ? `<span style="background-color:${tierVar};display:inline-block;` +
+        `border-radius:3px;">${"&nbsp;".repeat(filled)}</span>`
+      : "";
+  return (
+    `<span style="background-color:${TRACK};display:inline-block;` +
+    `border-radius:3px;">` +
+    fill +
+    "&nbsp;".repeat(BAR_UNITS - filled) +
+    `</span>`
+  );
+}
+
+/**
+ * Builds the tooltip markdown for a snapshot (window-block layout).
  */
 export function buildTooltipMarkdown(
   snapshot: QuotaSnapshot,
   opts: TooltipOptions,
 ): string {
   const name = opts.tokenName ? ` — ${escapeCell(opts.tokenName)}` : "";
-  const parts: string[] = [`**Ollama Quota**${name}${planSuffix(snapshot)}`];
-  const table = buildTable(snapshot, opts);
-  if (table) {
-    parts.push(table);
+  const parts: string[] = [
+    `$(cloud) **Ollama Quota**${name}${planSuffix(snapshot)}`,
+  ];
+  const blocks = buildBlocks(snapshot, opts);
+  if (blocks) {
+    parts.push(blocks);
   } else if (snapshot.mode === "unknown") {
     parts.push("Unknown response shape from the Ollama API.");
   }
@@ -137,95 +259,154 @@ function planSuffix(snapshot: QuotaSnapshot): string {
 }
 
 /**
- * The GFM table with one row per quota window, or undefined when there is
- * nothing to list (unknown mode without windows).
+ * One block per quota window, or undefined when there is nothing to list
+ * (unknown mode without windows). Each block is a raw-HTML div tree (enabled
+ * via `supportHtml` on the wrapper MarkdownString); blocks join with a
+ * blank line so the markdown parser keeps them as separate paragraphs.
  */
-function buildTable(
+function buildBlocks(
   snapshot: QuotaSnapshot,
   opts: TooltipOptions,
 ): string | undefined {
-  const rows: string[] = [];
+  const rows: {
+    name: string;
+    w: QuotaWindow;
+    showMoney: boolean;
+    isPrimary: boolean;
+    suffix?: string;
+  }[] = [];
   if (snapshot.mode === "credits" && snapshot.credits) {
-    rows.push(
-      windowRow("Credits", snapshot.credits, true, opts.timeFormat, true),
-    );
+    rows.push({
+      name: "Credits",
+      w: snapshot.credits,
+      showMoney: true,
+      isPrimary: true,
+    });
   } else if (snapshot.mode === "legacy" && snapshot.session) {
-    // The session row also carries the compact time-to-reset (the stamp in
-    // the Reset cell says WHEN, this says HOW LONG is left): the session
-    // window is the one the user waits on, so the hover answers "when can I
-    // use it again" without doing clock math. Omitted when the reset stamp
-    // is missing/invalid or already in the past.
-    rows.push(
-      windowRow("Session", snapshot.session, true, opts.timeFormat, false, {
-        suffix: timeRemaining(snapshot.session.resetsAt, nowMs(opts)),
-      }),
-    );
+    // The session block also carries the compact time-to-reset (the stamp
+    // says WHEN, the suffix says HOW LONG is left): the session window is
+    // the one the user waits on, so the hover answers "when can I use it
+    // again" without doing clock math. Omitted when the reset stamp is
+    // missing/invalid or already in the past.
+    rows.push({
+      name: "Session",
+      w: snapshot.session,
+      showMoney: false,
+      isPrimary: true,
+      suffix: timeRemaining(snapshot.session.resetsAt, nowMs(opts)),
+    });
     if (snapshot.weekly) {
-      rows.push(
-        windowRow("Week", snapshot.weekly, false, opts.timeFormat, false),
-      );
+      rows.push({
+        name: "Week",
+        w: snapshot.weekly,
+        showMoney: false,
+        isPrimary: false,
+      });
     }
   }
   if (rows.length === 0) {
     return undefined;
   }
-  const align = "|:--------|-------:|---------:|:-----|";
+  return rows
+    .map((r) =>
+      windowBlock(
+        r.name,
+        r.w,
+        r.showMoney,
+        r.isPrimary,
+        r.suffix,
+        opts.timeFormat,
+        opts.displayMode,
+        opts.warnThreshold,
+      ),
+    )
+    .join("\n\n");
+}
 
-  const head = `|${PAD2}Window${PAD2}|${PAD2}Usage${PAD2}|${PAD2}Remaining${PAD2}|${PAD2}Reset${PAD2}|`;
-  return [head, align, ...rows].join("\n");
+/** A quota window as consumed by the renderer. */
+interface QuotaWindow {
+  used: number;
+  limit: number;
+  remaining: number;
+  percentage: number;
+  resetsAt?: string;
 }
 
 /**
- * One table row for a quota window.
+ * One window block: name + hero percentage, the continuous bar (blue while
+ * healthy, warning-colored past the threshold), and a muted subtitle with
+ * ONLY what the hero/bar do not say (money for credits, reset stamp +
+ * time-left). A block with nothing to add renders no subtitle at all.
  *
- * - Credits windows show money in Usage and Remaining (`$1.20 / $3.00`).
- * - Legacy windows show percentages only (`30 %` / `70 %`).
+ * - ONE hero metric: `displayMode` picks it — used % (status-bar default)
+ *   or remaining % — and the BAR always fills with the SAME metric, so the
+ *   number never contradicts the bar (status-bar parity). In either mode
+ *   the fill grows from the left edge, exactly like the dashboard meter.
+ *   The subtitle deliberately does NOT repeat that number.
  * - `isPrimary` suffixes the name with `▸` (status-bar mirror).
- * - `showMoney` renders the money formatters (credits mode).
+ * - The % label and the BAR share ONE colour per tier: blue while healthy
+ *   (same neutral blue as the dashboard meter) and yellow/red once the
+ *   threshold is crossed, so the number never disagrees with the fill.
+ *   The subtitle is muted. Tiers always classify the REMAINING percentage
+ *   (shared `remainingTier` rule) so a mode flip never re-tints a window.
+ * - The % goes FIRST on its own line above the bar, GitHub-label style:
+ *   a right-edge alignment via `float:right` is impossible because the
+ *   hover style allowlist strips property values it doesn't know (whole
+ *   style dropped), and tables lose text-align in the sanitizer.
  */
-function windowRow(
+function windowBlock(
   name: string,
-  w: {
-    used: number;
-    limit: number;
-    remaining: number;
-    percentage: number;
-    resetsAt?: string;
-  },
-  isPrimary: boolean,
-  timeFormat: TimeFormatSetting,
+  w: QuotaWindow,
   showMoney: boolean,
-  /** Extra text after the reset stamp (e.g. `5h 23m left`). */
-  opts?: { suffix?: string },
+  isPrimary: boolean,
+  suffix: string | undefined,
+  timeFormat: TimeFormatSetting,
+  displayMode: DisplayMode = "used",
+  warnThreshold = 50,
 ): string {
-  const usedPct = Math.round(clampPct(100 - w.percentage));
-  const leftPct = Math.round(clampPct(w.percentage));
-  // Escaping applies to the bare name only: the primary marker we add must
-  // NOT be neutralised by our own sanitiser (only remote text goes through
-  // escapeCell; window names are our own constants).
-  const label = escapeCell(name) + (isPrimary ? " ▸" : "");
+  const leftPct = clampPct(w.percentage);
+  const usedPct = Math.max(0, Math.min(100, 100 - leftPct));
+  const shownPct = displayMode === "remaining" ? leftPct : usedPct;
+  // Tier classification ALWAYS stays on the REMAINING percentage — the
+  // shared traffic-light rule (`remainingTier`) must not flip when the
+  // label mode flips, or the two views would disagree on when a window is
+  // in trouble. The healthy/yellow boundary is the warn threshold setting.
+  const tier = remainingTier(leftPct, warnThreshold);
+  const tierVar = TIER_VAR[tier];
+  // Escaping applies to the bare name only: the primary marker is OURS and
+  // must survive (window names are extension constants, not remote text).
+  const label = escapeHtml(name) + (isPrimary ? " ▸" : "");
+  const pctHtml = `<span style="color:${tierVar}"><b>${Math.round(shownPct)}%</b></span>`;
+  // The bar fills FROM THE LEFT with the metric the hero number shows
+  // (used side in "used" mode, remaining side in "remaining" mode) — the
+  // dashboard meter does the same via data-w, so number and bar agree in
+  // both views and one setting moves them together. Number and bar share
+  // ONE colour per tier (blue while healthy, yellow/red past the threshold).
+  const bar = segBar(shownPct, tierVar);
+  // Subtitle: ONLY what the hero/bar do not already say. The percentage
+  // the mode selects is the hero line — repeating "N% used" under the bar
+  // was redundant in BOTH views, so percentage windows carry only the
+  // reset info here; credits keep the money line (exact balance, nowhere
+  // else shown). A block with nothing to add renders no subtitle at all.
   const usage = showMoney
-    ? `$${fmt(w.used)} / $${fmt(w.limit)} · ${usedPct} %`
-    : `${usedPct} %`;
-  const remaining = showMoney
-    ? `$${fmt(w.remaining)} · ${leftPct} %`
-    : `${leftPct} %`;
+    ? `$${fmt(w.used)} of $${fmt(w.limit)} used`
+    : undefined;
   const reset = w.resetsAt
-    ? escapeCell(formatShortStamp(w.resetsAt, { timeFormat }))
-    : CELL_EMPTY;
-  // The suffix is OUR OWN text (digits + h/m/left, no markdown chars), so it
-  // joins the cell without re-escaping — escapeCell stays for remote/stamp
-  // text only. A middle-dot keeps the two reads visually separated.
-  const resetCell = opts?.suffix ? `${reset}${PAD}· ${opts.suffix}` : reset;
-  const cells = [
-    label,
-    usage,
-    remaining,
-    // Leading gutter INSIDE the (left-aligned) reset cell ⇒ a real gap
-    // between the Remaining column and the stamp in every row.
-    `${RESET_PAD}${resetCell}`,
-  ];
-  return `|${PAD}${cells.join(`${PAD}|${PAD}`)}${PAD}|`;
+    ? `resets ${escapeHtml(formatShortStamp(w.resetsAt, { timeFormat }))}`
+    : undefined;
+  // The suffix is OUR OWN text (digits + h/m) — escaped for symmetry, it
+  // can never carry markup.
+  const resetLine = [
+    usage ? escapeHtml(usage) : undefined,
+    reset,
+    suffix ? escapeHtml(suffix) : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const sub = resetLine
+    ? `<div><span style="${MUTED}">${resetLine}</span></div>`
+    : "";
+  return `<div>` + `<div>${label} — ${pctHtml}</div>` + bar + sub + `</div>`;
 }
 
 /**

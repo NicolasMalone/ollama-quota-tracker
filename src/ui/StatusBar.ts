@@ -7,9 +7,12 @@ import {
   clampPct,
   CMD_CONFIGURE,
   CMD_DASHBOARD,
+  CMD_REFRESH,
 } from "./tooltip";
 import type { TimeFormatSetting } from "./timeFormat";
 
+/** The display-mode setting type lives in `tooltip.ts` (the shared pure
+ * renderer); declared here as a distinct alias for this module's API. */
 export type DisplayMode = "used" | "remaining";
 
 export interface StatusBarDeps {
@@ -96,7 +99,10 @@ export class StatusBar implements vscode.Disposable {
       this.item.tooltip = mdTooltip(
         snapshot,
         this.getTimeFormat(),
+        this.getDisplayMode(),
         staleNote(isError),
+        undefined,
+        this.getWarnThreshold(),
       );
       return;
     }
@@ -111,8 +117,10 @@ export class StatusBar implements vscode.Disposable {
     this.item.tooltip = mdTooltip(
       snapshot,
       this.getTimeFormat(),
+      this.getDisplayMode(),
       staleNote(isError),
       this.lastTokenName,
+      warnThreshold,
     );
   }
 
@@ -132,21 +140,36 @@ function staleNote(isError: boolean): string | undefined {
 }
 
 /**
- * Wraps the pure tooltip markdown (from `ui/tooltip.ts`) into a trusted
- * `MarkdownString` with theme-icon support. All layout logic lives in the
- * pure renderer; this wrapper only adapts it to the VS Code API.
+ * Wraps the pure tooltip markdown (from `ui/tooltip.ts`) into a
+ * `MarkdownString` prepared for rendering:
+ * - `supportThemeIcons` → `$(cloud)` in the header.
+ * - `supportHtml` → the quota table is raw HTML with theme-colored
+ *   percentage spans (safe subset only; VS Code sanitises tags/styles).
+ * - `isTrusted` restricted to the extension's own commands → command links
+ *   execute nothing else even if a remote cell crafted markup.
  */
 function mdTooltip(
   snapshot: QuotaSnapshot,
   timeFormat: TimeFormatSetting,
+  displayMode: DisplayMode,
   errorNote?: string,
   tokenName?: string,
+  warnThreshold?: number,
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString(
-    buildTooltipMarkdown(snapshot, { timeFormat, errorNote, tokenName }),
+    buildTooltipMarkdown(snapshot, {
+      timeFormat,
+      displayMode,
+      warnThreshold,
+      errorNote,
+      tokenName,
+    }),
+    true,
   );
-  md.isTrusted = true;
-  md.supportThemeIcons = true;
+  md.isTrusted = {
+    enabledCommands: [CMD_REFRESH, CMD_DASHBOARD, CMD_CONFIGURE],
+  };
+  md.supportHtml = true;
   return md;
 }
 
