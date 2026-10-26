@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.1](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.12.0...v0.12.1) (2026-10-26)
+
+### Bug Fixes
+
+* **dashboard:** omit ($0) in stacked segment hover on legacy plans ([7863d77](https://github.com/NicolasMalone/ollama-quota-tracker/commit/7863d77d7f855d1eae63a7eb7fbd2946058163ba))
+
 ## [0.12.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.11.0...v0.12.0) (2026-10-26)
 
 ### Features
