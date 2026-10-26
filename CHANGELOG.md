@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.11.0...v0.12.0) (2026-10-26)
+
+### Features
+
+* **dashboard:** spotlight individual stacked segments on hover ([a5dd5c1](https://github.com/NicolasMalone/ollama-quota-tracker/commit/a5dd5c13fccb2e88bba6618939392b5ce89badaa))
+* **ui:** keep the API's one-decimal percentages in every label ([197961a](https://github.com/NicolasMalone/ollama-quota-tracker/commit/197961ab52c045d0549491c95781a40bd8333b49))
+
+### Documentation
+
+* **readme:** legacy capture shows decimal percentages and stacked model charts ([a80e54b](https://github.com/NicolasMalone/ollama-quota-tracker/commit/a80e54ba4602f93f9de0b5d1754960de71f8331c))
+* **readme:** re-anchor screenshot clocks to a fresh date ([8475789](https://github.com/NicolasMalone/ollama-quota-tracker/commit/8475789a4ffe3143f16abec96d0b29593d527fda))
+* **readme:** show one-decimal labels and the per-segment hover in the credits capture ([d2d5eb7](https://github.com/NicolasMalone/ollama-quota-tracker/commit/d2d5eb79137e3b872d8453039079a02e7c8791a5))
+
 ## [0.11.0](https://github.com/NicolasMalone/ollama-quota-tracker/compare/v0.10.0...v0.11.0) (2026-10-23)
 
 ### Features
