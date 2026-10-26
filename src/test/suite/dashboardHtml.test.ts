@@ -398,6 +398,49 @@ suite("dashboardHtml", () => {
     assert.doesNotMatch(week, /Other<\/span>/);
   });
 
+  test("usage charts: models without cost data show no ($0) in the segment hover", () => {
+    // Legacy-style payload: the API groups by model but ranks by request
+    // count only — no usage_usd anywhere. The hover must stay count-only,
+    // like the plain (unstacked) column title.
+    const history = parseUsageHistory({
+      range: "30d",
+      granularity: "day",
+      group_by: "model",
+      from: "2026-10-13T00:00:00Z",
+      until: "2026-10-16T00:00:00Z",
+      totals: { request_count: 30 },
+      buckets: [
+        {
+          from: "2026-10-15T00:00:00Z",
+          until: "2026-10-16T00:00:00Z",
+          request_count: 30,
+          groups: [
+            { model: "gpt-oss:120b", request_count: 20 },
+            { model: "glm-5.3-flash", request_count: 10 },
+          ],
+        },
+      ],
+    })!;
+    const html = buildDashboardHtml({
+      ...baseOpts(),
+      snapshot: legacySnapshot(),
+      history,
+      now: Date.parse("2026-10-16T12:00:00Z"),
+      nonce: NONCE,
+    });
+    const week = html.slice(html.indexOf("Week ("), html.indexOf("Month ("));
+    // Counts in the hover, but no $ at all.
+    assert.match(
+      week,
+      /title="Oct 15 · gpt-oss:120b — 20 requests"/,
+    );
+    assert.match(
+      week,
+      /title="Oct 15 · glm-5\.3-flash — 10 requests"/,
+    );
+    assert.doesNotMatch(week, /\(\$0\)|\(\$0[,\.]00\)/);
+  });
+
   test("usage charts: unmatched requests fall into the grey Other slot", () => {
     // API remainder (or dropped groups): bucket total exceeds its groups.
     const history = parseUsageHistory({

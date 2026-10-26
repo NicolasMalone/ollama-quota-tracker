@@ -863,6 +863,11 @@ function stackedTrack(
   const usds = new Map<string, number>(
     stack.names.map((n) => [n, 0] as [string, number]),
   );
+  // Models whose day groups actually carried usage_usd. The maps above are
+  // seeded with 0, which would otherwise leak into the segment title as a
+  // misleading "($0)" on plans that rank by requests only (legacy): a $ sign
+  // must appear only for models the API costed.
+  const costed = new Set<string>();
   let grouped = 0;
   let groupedUsd: number | undefined;
   for (const g of d.groups ?? []) {
@@ -874,6 +879,7 @@ function stackedTrack(
     if (g.usageUsd !== undefined) {
       groupedUsd = (groupedUsd ?? 0) + g.usageUsd;
       usds.set(g.model, (usds.get(g.model) ?? 0) + g.usageUsd);
+      costed.add(g.model);
     }
   }
   const other = Math.max(0, d.requestCount - grouped);
@@ -891,7 +897,9 @@ function stackedTrack(
         slot: assigned.get(name)!,
         label: name,
         count,
-        usd: usds.get(name),
+        // Cost shown only when this day actually reported one for the
+        // model (0 stays a real "$0" — a genuinely free model).
+        usd: costed.has(name) ? (usds.get(name) ?? 0) : undefined,
       });
     }
   });
