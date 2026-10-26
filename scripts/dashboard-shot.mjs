@@ -120,12 +120,16 @@ const variants = [
       // The fixture's billing period closes in the past relative to the
       // render clock (it would read "Resets any moment now."); the capture
       // shows an in-flight period instead, like the tooltip preview does.
+      // A fractional percentage (27.6 left → 72.4 used) shows the one-decimal
+      // meter labels (formatPct, ollama.com parity) the extension renders.
       patch: (snap) => {
+        snap.credits.percentage = 27.6;
         snap.credits.resetsAt = new Date(
           CREDITS_NOW + 9 * 86_400_000,
         ).toISOString();
       },
     }),
+    sim: true,
   },
   {
     file: "dashboard-legacy.png",
@@ -149,6 +153,77 @@ const variants = [
 ];
 
 const puppeteer = require("puppeteer-core");
+
+/**
+ * Fabricated per-segment hover, for the README capture ONLY: the native
+ * `title` tooltips are OS-drawn and can never appear in a static PNG, so the
+ * spotlight (stack dimmed, one segment lit — exactly what the real CSS hover
+ * rules do) and a chip mimicking the browser tooltip rendering are composed
+ * here over the tallest glm-5.3-flash segment of the Week chart.
+ */
+async function simulateHover(page, nonce) {
+  const diag = await page.evaluate((n) => {
+    const weekCard = document.querySelectorAll("section.card")[1];
+    if (!weekCard) {
+      return;
+    }
+    const segs = Array.from(weekCard.querySelectorAll(".day-seg"));
+    let target = null;
+    for (const s of segs) {
+      const h = Number(s.getAttribute("data-h") ?? 0);
+      if (
+        s.title.includes("glm-5.3-flash") &&
+        (!target || h > Number(target.getAttribute("data-h")))
+      ) {
+        target = s;
+      }
+    }
+    if (!target) {
+      return;
+    }
+    // The dashboard's CSP only accepts nonce'd <style>/<script> elements, so
+    // the injected dim/on rules must carry the same nonce the page renders.
+    const style = document.createElement("style");
+    style.setAttribute("nonce", n);
+    style.textContent =
+      ".day-seg.dim { opacity: .15 !important; } .day-seg.on { opacity: 1 !important; }";
+    document.head.appendChild(style);
+    for (const s of segs) {
+      if (s !== target) {
+        s.classList.add("dim");
+      }
+    }
+    target.classList.add("on");
+    // The chip goes straight into <body> with PAGE coordinates: the segment's
+    // .day-track is overflow:hidden and would clip a child tooltip entirely.
+    // It floats above the chart's summary line, horizontally centred on the
+    // segment, like a browser tooltip would near the pointer.
+    const rect = target.getBoundingClientRect();
+    const chip = document.createElement("div");
+    chip.textContent = target.title;
+    chip.style.cssText =
+      "position:absolute;background:#252526;" +
+      "border:1px solid #454545;border-radius:3px;padding:2px 6px;" +
+      "font-size:11px;line-height:1.4;color:#ccc;white-space:nowrap;" +
+      "box-shadow:0 2px 8px rgba(0,0,0,.36);z-index:9;" +
+      "left:" + Math.round(rect.left - 8) + "px;" +
+      "top:" + Math.round(rect.top + 4) + "px;" +
+      "transform:translateX(-100%);";
+    document.body.appendChild(chip);
+    return {
+      segs: segs.length,
+      target: target.title,
+      dimmed: getComputedStyle(segs[0]).opacity,
+      on: getComputedStyle(target).opacity,
+      chip: chip.getBoundingClientRect().width > 0,
+    };
+  }, nonce);
+  await new Promise((r) => setTimeout(r, 150));
+  if (!diag || !diag.target) {
+    throw new Error("simulateHover found no target segment");
+  }
+  console.log("  hover sim:", JSON.stringify(diag));
+}
 
 /* Locate a Chrome/Chromium executable on this machine (first match wins). */
 function findChrome() {
@@ -175,7 +250,7 @@ const browser = await puppeteer.launch({
   args: ["--no-sandbox"],
 });
 try {
-  for (const { file, html } of variants) {
+  for (const { file, html, sim } of variants) {
     // Intermediate page goes to the OS temp dir: a crashed run must never
     // leave an HTML file inside media/ (the VSIX would ship it).
     const htmlPath = path.join(os.tmpdir(), file.replace(/\.png$/, ".html"));
@@ -191,6 +266,9 @@ try {
     });
     await page.goto("file:///" + htmlPath.replace(/\\/g, "/"));
     await new Promise((r) => setTimeout(r, 400));
+    if (sim) {
+      await simulateHover(page, NONCE);
+    }
     await page.screenshot({
       path: path.join(root, "media", file),
       fullPage: true,
