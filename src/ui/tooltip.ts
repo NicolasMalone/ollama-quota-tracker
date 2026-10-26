@@ -130,6 +130,22 @@ export function clampPct(n: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
 }
 
+/**
+ * Formats a percentage with AT MOST one decimal (matches ollama.com, which
+ * shows a single decimal when the API reports one: 58.7% stays 58.7%, 60%
+ * stays 60%). Shared by the status bar text, the hover hero line and the
+ * dashboard meter labels — the same window must never read differently
+ * across views. Half-up rounding at 1 decimal and `Number.isFinite` guards
+ * NaN windows.
+ */
+export function formatPct(n: number): string {
+  if (!Number.isFinite(n)) {
+    n = 0;
+  }
+  const clamped = Math.max(0, Math.min(100, n));
+  return `${(Math.round(clamped * 10) / 10).toString()}%`;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Severity tiers + hover HTML primitives                                    */
 /* ------------------------------------------------------------------------ */
@@ -376,7 +392,7 @@ function windowBlock(
   // Escaping applies to the bare name only: the primary marker is OURS and
   // must survive (window names are extension constants, not remote text).
   const label = escapeHtml(name) + (isPrimary ? " ▸" : "");
-  const pctHtml = `<span style="color:${tierVar}"><b>${Math.round(shownPct)}%</b></span>`;
+  const pctHtml = `<span style="color:${tierVar}"><b>${formatPct(shownPct)}</b></span>`;
   // The bar fills FROM THE LEFT with the metric the hero number shows
   // (used side in "used" mode, remaining side in "remaining" mode) — the
   // dashboard meter does the same via data-w, so number and bar agree in

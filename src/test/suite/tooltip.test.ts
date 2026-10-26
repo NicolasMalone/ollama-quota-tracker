@@ -3,6 +3,7 @@ import {
   buildTooltipMarkdown,
   escapeCell,
   escapeHtml,
+  formatPct,
   timeRemaining,
 } from "../../ui/tooltip";
 import type { QuotaSnapshot } from "../../types/quota";
@@ -121,6 +122,36 @@ suite("tooltip — window blocks layout", () => {
       38,
       "fill 60% remaining of 64 units",
     );
+  });
+
+  test("percentages keep the API's decimals (ollama.com parity)", () => {
+    // The API reports fractional percentages (e.g. 58.7); the hero label
+    // shows ONE decimal only when the value has one — 60% stays "60%".
+    const md = buildTooltipMarkdown(
+      creditsSnapshot({
+        credits: {
+          used: 41.3,
+          limit: 100,
+          remaining: 58.7,
+          percentage: 58.7,
+          resetsAt: "2026-10-16T02:00:00Z",
+        },
+      }),
+      { timeFormat: "12h", displayMode: "remaining" },
+    );
+    assert.match(
+      md,
+      /<div>Credits ▸ — <span style="color:var\(--vscode-charts-blue\)"><b>58\.7%<\/b><\/span><\/div>/,
+    );
+    // Integers never gain a trailing ".0"; fractions cap at ONE decimal.
+    assert.equal(formatPct(60), "60%");
+    assert.equal(formatPct(58.7), "58.7%");
+    assert.equal(formatPct(58.75), "58.8%");
+    assert.equal(formatPct(58.751), "58.8%");
+    assert.equal(formatPct(41.999), "42%");
+    assert.equal(formatPct(-5), "0%");
+    assert.equal(formatPct(150), "100%");
+    assert.equal(formatPct(Number.NaN), "0%");
   });
 
   test("token name renders neutralised in the header when provided", () => {

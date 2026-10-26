@@ -5,6 +5,7 @@ import type { RefreshState } from "../services/QuotaStore";
 import {
   buildTooltipMarkdown,
   clampPct,
+  formatPct,
   CMD_CONFIGURE,
   CMD_DASHBOARD,
   CMD_REFRESH,
@@ -110,10 +111,11 @@ export class StatusBar implements vscode.Disposable {
     const warn = primary.percentage <= warnThreshold;
     const icon = warn || isError ? "$(warning)" : "$(cloud)";
     const usedPct = clampPct(100 - primary.percentage);
-    const left = Math.round(primary.percentage);
     const showUsed = this.getDisplayMode() === "used";
-    const shownPct = showUsed ? Math.round(usedPct) : left;
-    this.setText(`${icon} Ollama ${shownPct}%`);
+    // formatPct keeps the API's decimals (ollama.com parity): 58.7 stays
+    // "58.7%", 60 stays "60%" — no forced rounding in any view.
+    const shownPct = formatPct(showUsed ? usedPct : primary.percentage);
+    this.setText(`${icon} Ollama ${shownPct}`);
     this.item.tooltip = mdTooltip(
       snapshot,
       this.getTimeFormat(),
