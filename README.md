@@ -12,15 +12,15 @@ Displays your remaining **Ollama Cloud** quota in the VS Code status bar.
 
 - Queries Ollama's documented endpoints (`https://ollama.com/api/balance` and `/api/usage`) using an API key created at `https://ollama.com/settings/keys`.
 - Shows the **used %** (default) or the **remaining %** in the Status Bar, controlled by the `ollamaQuota.displayMode` option — the setting drives the hover tooltip and the dashboard meters too, so every view shows and fills the same percentage. Percentages keep the API's decimals everywhere (at most one, like ollama.com itself: `58.7%` stays `58.7%`, `60%` stays `60%`).
-- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management. On plans with model data the chart bars are **stacked by model** with a colour legend (a model keeps its colour across charts and refreshes), alongside a per-model usage breakdown, and hovering a stacked bar spotlights **one segment at a time** — the rest of the stack dims and a native tooltip names the day, the model and its spend (e.g. `Oct 15 · glm-5.3-flash — 440 requests ($0.85)`). Charts adapt to narrow panels: a full month is ticked with the bare day number in every column (the card title carries the month) and thins down to the anchors — the 1st, the Mondays, the busiest day and today — before dropping labels, while days without requests render a neutral tick instead of a bar.
+- **Dashboard webview**: click the status bar item (or run `Ollama Quota: Open Dashboard`) for quota meters, daily usage charts of the active week and month, and token management. When the usage API reports model data the chart bars are **stacked by model** with a colour legend (a model keeps its colour across charts and refreshes), alongside a per-model usage breakdown, and hovering a stacked bar spotlights **one segment at a time** — the rest of the stack dims and a native tooltip names the day, the model and its spend (e.g. `Oct 15 · glm-5.3-flash — 440 requests ($0.85)`). Charts adapt to narrow panels: a full month is ticked with the bare day number in every column (the card title carries the month) and thins down to the anchors — the 1st, the Mondays, the busiest day and today — before dropping labels, while days without requests render a neutral tick instead of a bar.
 
-Dashboard (credits plan — a decimal percentage on the meter, week/month charts stacked by model with the Oct 15 glm-5.3-flash segment hovered — spotlight and tooltip shown —, per-model tables and the token selector):
+Dashboard (credits plan — a decimal percentage on the meter, week/month charts stacked by model with the Oct 24 glm-5.3-flash segment hovered — spotlight and tooltip shown —, per-model tables and the token selector):
 
 ![Dashboard on the credits plan: included credits meter, active week and active month charts with per-model tables, token selector](media/dashboard-credits.png)
 
-Dashboard (legacy plan — session/weekly meters; usage charts carry no model tables because legacy usage reports no model data):
+Dashboard (legacy plan — session/weekly meters with the API's decimal percentages and the same stacked-by-model charts, a colour legend and per-model tables):
 
-![Dashboard on the legacy plan with session and weekly meters and usage charts without model tables](media/dashboard-legacy.png)
+![Dashboard on the legacy plan with decimal meter percentages and stacked model charts with per-model tables](media/dashboard-legacy.png)
 
 - **Multiple API tokens**: store several named keys and switch between them; only the active one is polled, so the shared rate limit (10 requests/minute) is respected.
 - Tooltip and dashboard timestamps (resets, update times, chart labels) rendered as e.g. `Nov 1 at 1:00 AM`; the clock can be forced to 12‑ or 24‑hour via `ollamaQuota.tooltipTimeFormat`.

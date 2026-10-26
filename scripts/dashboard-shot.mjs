@@ -60,11 +60,33 @@ function legacyUsage() {
   ];
   const start = Date.parse("2026-10-01T00:00:00Z");
   const day = 86_400_000;
-  const buckets = counts.map((requestCount, i) => ({
-    from: new Date(start + i * day).toISOString(),
-    until: new Date(start + (i + 1) * day).toISOString(),
-    request_count: requestCount,
-  }));
+  // Legacy plans DO run several models and the API still groups by model
+  // (group_by=model arrives regardless of the billing mode); the README
+  // capture shows that. Same three models as the credits capture, so both
+  // screenshots share one colour language: one model per palette hash.
+  const mixes = [
+    { "gpt-oss:120b": 0.6, "glm-5.3-flash": 0.4 },
+    { "gpt-oss:120b": 1 },
+    { "glm-5.3-flash": 0.7, "qwen3-coder:480b": 0.3 },
+    { "gpt-oss:120b": 0.45, "glm-5.3-flash": 0.3, "qwen3-coder:480b": 0.25 },
+  ];
+  const buckets = counts.map((requestCount, i) => {
+    const from = new Date(start + i * day).toISOString();
+    const until = new Date(start + (i + 1) * day).toISOString();
+    if (requestCount === 0) {
+      return { from, until, request_count: 0 };
+    }
+    const mix = mixes[i % mixes.length];
+    let left = requestCount;
+    const names = Object.keys(mix);
+    const groups = names.map((model, gi) => {
+      const isLast = gi === names.length - 1;
+      const share = isLast ? left : Math.round(requestCount * mix[model]);
+      left -= share;
+      return { model, request_count: share };
+    });
+    return { from, until, request_count: requestCount, groups };
+  });
   // Open bucket: today, recorded up to the render clock (partial, so the
   // chart dims it and labels it "today").
   buckets.push({
@@ -72,11 +94,17 @@ function legacyUsage() {
     until: LEGACY_NOW_ISO,
     partial: true,
     request_count: 52,
+    groups: [
+      { model: "gpt-oss:120b", request_count: 24 },
+      { model: "glm-5.3-flash", request_count: 18 },
+      { model: "qwen3-coder:480b", request_count: 10 },
+    ],
   });
   return {
     range: "30d",
     scope: "self",
     granularity: "day",
+    group_by: "model",
     from: "2026-10-01T00:00:00Z",
     until: LEGACY_NOW_ISO,
     totals: { request_count: counts.reduce((a, b) => a + b, 0) + 52 },
@@ -234,11 +262,13 @@ const variants = [
       // Same windows as scripts/hover-shot.mjs: the session resets a couple of
       // hours out (31 % used, blue) and the weekly window on the next Monday
       // at 18 % left (82 % used, yellow at the default threshold), so the
-      // tooltip and the dashboard agree line for line.
+      // tooltip and the dashboard agree line for line. Fractional percentages
+      // (remaining 69.3 → 30.7 used) show the one-decimal labels the API
+      // reports for legacy windows too.
       patch: (snap) => {
-        snap.session.percentage = 69;
+        snap.session.percentage = 69.3;
         snap.session.resetsAt = "2026-10-25T12:00:00Z";
-        snap.weekly.percentage = 18;
+        snap.weekly.percentage = 17.6;
         snap.weekly.resetsAt = "2026-10-26T01:00:00Z";
       },
     }),
