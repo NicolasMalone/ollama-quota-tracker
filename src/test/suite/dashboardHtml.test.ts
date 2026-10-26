@@ -241,8 +241,23 @@ suite("dashboardHtml", () => {
     assert.doesNotMatch(html, /data-h="0"/);
     assert.match(html, /class="day-seg pal-4" data-h="79"/);
     assert.match(html, /class="day-seg pal-5" data-h="21"/);
+    // Hover is per segment: each seg carries its own native title (day label
+    // · model — requests ($)), overriding the column's total title.
+    assert.match(
+      html,
+      /title="Oct 15 · glm-5\.3-flash — 440 requests \(\$0\.85\)"/,
+    );
+    assert.match(
+      html,
+      /title="Oct 15 · qwen3-coder:480b — 120 requests \(\$0\.57\)"/,
+    );
     // Oct 13: gpt 180 (32%) + glm 160 (boundary 340/560 → 61 − 32 = 29).
-    assert.match(html, /class="day-seg pal-3" data-h="32"/);
+    // Monetary decimals are host-locale formatted by fmtNum (comma here),
+    // so the "$0.70" figure asserts only its shape.
+    assert.match(
+      html,
+      /class="day-seg pal-3" data-h="32" title="Oct 13 · gpt-oss:120b — 180 requests \(\$0[,\.]7\)"/,
+    );
     assert.match(html, /class="day-seg pal-4" data-h="29"/);
     // Responsive: each chart mirrors its bucket count for the dense-label
     // CSS (week=5, month=7 with this fixture → both stay non-dense).
@@ -409,7 +424,10 @@ suite("dashboardHtml", () => {
     });
     // 7 grouped + 3 Other = the full 10-request bar (70% of max 10).
     assert.match(html, /class="day-seg pal-0" data-h="70"/);
-    assert.match(html, /class="day-seg pal-8" data-h="30"/);
+    assert.match(
+      html,
+      /class="day-seg pal-8" data-h="30" title="Oct 15 · Other — 3 requests"/,
+    );
     // The grey Other chip closes the legend.
     assert.match(
       html,

@@ -54,7 +54,12 @@ import {
   formatShortStamp,
   type TimeFormatSetting,
 } from "./timeFormat";
-import { timeRemaining, remainingTier, type DisplayMode } from "./tooltip";
+import {
+  formatPct,
+  timeRemaining,
+  remainingTier,
+  type DisplayMode,
+} from "./tooltip";
 
 /* Message names sent by the webview script to the host (keep in sync with
  * Dashboard.ts). Exported so controller and tests share the constants. */
@@ -330,9 +335,11 @@ function usedLabel(used: number, limit: number): string {
   return `$${fmtNum(used)} of $${fmtNum(limit)}`;
 }
 
-/** Right-head meter label; the number is the metric `displayMode` selects. */
+/** Right-head meter label; the number is the metric `displayMode` selects.
+ * `formatPct` keeps the API's decimals (ollama.com parity): 58.7 -> "58.7%",
+ * 60 -> "60%". */
 function pctLabel(v: number): string {
-  return `${Math.round(clamp(v))}%`;
+  return formatPct(clamp(v));
 }
 
 function clamp(v: number): number {
@@ -699,7 +706,7 @@ function dayBars(
         d.requestCount === 0
           ? `<div class="day-zero"></div>`
           : stack.names.length
-            ? stackedTrack(d, stack, max)
+            ? stackedTrack(d, stack, max, label)
             : `<div class="day-fill" data-h="${Math.min(100, Math.round((d.requestCount / max) * 100))}"></div>`;
       const title = escapeHtml(
         d.requestCount === 0
@@ -835,30 +842,66 @@ function stackOf(slice: UsageSlice): StackSpec {
  * visible bar still matches the `title`'s total. Requests outside the
  * bucket's parsed groups (API `remainder`, dropped groups) land in the grey
  * "Other" slot so no request goes missing from the column.
+ *
+ * Hover is PER SEGMENT: each `.day-seg` carries its own native `title`
+ * (`Oct 15 · glm-5.3-flash — 440 requests ($0.85)`) which overrides the
+ * column-level one while the pointer is over it, so a multi-model day can
+ * be read one series at a time. Model names are remote text and always go
+ * through escapeHtml. The `label` (the day caption, "today" for the open
+ * bucket) comes from the caller so the segment tooltip names the same day
+ * the column's title does.
  */
-function stackedTrack(d: UsagePoint, stack: StackSpec, max: number): string {
+function stackedTrack(
+  d: UsagePoint,
+  stack: StackSpec,
+  max: number,
+  label: string,
+): string {
   const counts = new Map<string, number>(
     stack.names.map((n) => [n, 0] as [string, number]),
   );
+  const usds = new Map<string, number>(
+    stack.names.map((n) => [n, 0] as [string, number]),
+  );
   let grouped = 0;
+  let groupedUsd: number | undefined;
   for (const g of d.groups ?? []) {
     grouped += g.requestCount;
     const known = counts.get(g.model);
     if (known !== undefined) {
       counts.set(g.model, known + g.requestCount);
     }
+    if (g.usageUsd !== undefined) {
+      groupedUsd = (groupedUsd ?? 0) + g.usageUsd;
+      usds.set(g.model, (usds.get(g.model) ?? 0) + g.usageUsd);
+    }
   }
   const other = Math.max(0, d.requestCount - grouped);
+  const otherUsd =
+    d.usageUsd !== undefined && groupedUsd !== undefined
+      ? Math.max(0, d.usageUsd - groupedUsd)
+      : undefined;
   const assigned = slotMap(stack);
-  const slots: { slot: number; count: number }[] = [];
+  const slots: { slot: number; label: string; count: number; usd?: number }[] =
+    [];
   stack.names.forEach((name) => {
     const count = counts.get(name) ?? 0;
     if (count > 0) {
-      slots.push({ slot: assigned.get(name)!, count });
+      slots.push({
+        slot: assigned.get(name)!,
+        label: name,
+        count,
+        usd: usds.get(name),
+      });
     }
   });
   if (other > 0) {
-    slots.push({ slot: OTHER_SLOT, count: other });
+    slots.push({
+      slot: OTHER_SLOT,
+      label: "Other",
+      count: other,
+      usd: otherUsd,
+    });
   }
   if (slots.length === 0) {
     // Defensive: a day with no measurable segments renders the same neutral
@@ -868,13 +911,17 @@ function stackedTrack(d: UsagePoint, stack: StackSpec, max: number): string {
   const segs: string[] = [];
   let prev = 0;
   let running = 0;
-  for (const { slot, count } of slots) {
+  for (const { slot, label: name, count, usd } of slots) {
     running += count;
     // Rounded cumulative boundary: the last one is exactly the plain fill
     // height (min(round(count/max*100), 100)), so the column keeps its size.
     const boundary = Math.min(100, Math.round((running / max) * 100));
+    const title = escapeHtml(
+      `${label} · ${name} — ${fmtNum(count)} requests` +
+        (usd !== undefined ? ` ($${fmtNum(usd)})` : ""),
+    );
     segs.push(
-      `<div class="day-seg pal-${slot}" data-h="${boundary - prev}"></div>`,
+      `<div class="day-seg pal-${slot}" data-h="${boundary - prev}" title="${title}"></div>`,
     );
     prev = boundary;
   }
@@ -1004,11 +1051,18 @@ body {
   opacity: .55;
 }
 /* Stacked charts: each segment is a plain flex child (measured via data-h
-   like the legacy fill). A tiny share that rounds to 0 keeps a 1px sliver,
-   and only the topmost segment carries the bar's rounded cap. */
+   like the legacy fill). A tiny share that rounds to 0 keeps a 1px sliver.
+   NO rounded cap on the topmost segment: every segment paints its own box,
+   and rounding the last one makes the joints read as notches between
+   different-coloured models. */
 .day-seg { width: 100%; flex: none; height: 0; min-height: 1px; opacity: .85; }
-.day-seg:last-child { border-radius: 2px 2px 0 0; }
 .day-col.partial .day-seg { opacity: .45; }
+/* Per-segment hover: over a multi-model column the whole stack dims and the
+   segment under the pointer lights up (its native title carries the model's
+   own breakdown), so one series can be read at a time without a legend
+   lookup. Hover beats the .partial dim on the hovered segment only. */
+.day-track:hover .day-seg { opacity: .3; }
+.day-track:hover .day-seg:hover { opacity: 1; }
 /* Colour slots shared by stacked segments and legend swatches (0-7 cycle,
    8 is the reserved grey "Other"). Fallbacks match VS Code's palette. */
 .pal-0 { background: var(--vscode-charts-blue, #4aa3ff); }
