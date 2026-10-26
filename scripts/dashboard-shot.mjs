@@ -29,7 +29,7 @@ const { buildDashboardHtml } = require(
 const { parseBalanceResponse, parseUsageHistory } = require(
   path.join(root, "out", "providers", "parse.js"),
 );
-const { creditsBalance, legacyBalance, usage30d } = require(
+const { creditsBalance, legacyBalance } = require(
   path.join(root, "out", "test", "suite", "fixtures.js"),
 );
 
@@ -42,8 +42,8 @@ const TOKENS = [
 /** Render clock of the legacy capture. Matches scripts/hover-shot.mjs, so the
  * tooltip and the dashboard screenshots in the README describe the SAME
  * moment and the same numbers. */
-const LEGACY_NOW = Date.parse("2026-10-23T10:18:00Z");
-const LEGACY_NOW_ISO = "2026-10-23T10:18:00Z";
+const LEGACY_NOW = Date.parse("2026-10-25T10:18:00Z");
+const LEGACY_NOW_ISO = "2026-10-25T10:18:00Z";
 
 /**
  * Legacy 30d payload for the capture: the unit-test legacy fixture records a
@@ -53,12 +53,12 @@ const LEGACY_NOW_ISO = "2026-10-23T10:18:00Z";
  * legacy charts as users actually see them.
  */
 function legacyUsage() {
-  // One count per closed day, Sep 24 .. Oct 22 (29 days, oldest first).
+  // One count per closed day, Oct 1 .. Oct 24 (24 days, oldest first).
   const counts = [
-    0, 24, 61, 43, 0, 18, 92, 74, 55, 130, 41, 0, 87, 96, 62, 150, 38, 21, 110,
-    84, 49, 67, 0, 35, 121, 58, 91, 143, 44,
+    42, 67, 0, 88, 120, 54, 31, 96, 72, 0, 110, 65, 140, 98, 47, 0, 75, 130,
+    59, 122, 84, 0, 135, 76,
   ];
-  const start = Date.parse("2026-09-24T00:00:00Z");
+  const start = Date.parse("2026-10-01T00:00:00Z");
   const day = 86_400_000;
   const buckets = counts.map((requestCount, i) => ({
     from: new Date(start + i * day).toISOString(),
@@ -77,7 +77,100 @@ function legacyUsage() {
     range: "30d",
     scope: "self",
     granularity: "day",
-    from: "2026-09-24T00:00:00Z",
+    from: "2026-10-01T00:00:00Z",
+    until: LEGACY_NOW_ISO,
+    totals: { request_count: counts.reduce((a, b) => a + b, 0) + 52 },
+    buckets,
+  };
+}
+
+/**
+ * Credits 30d payload for the capture, freshly anchored to the render clock:
+ * the unit-test fixture spans mid-October, which would date the README. Same
+ * three models the fixture uses (names drive the palette hash, so colours
+ * match the legend), daily splits rotating through single/pair/all-model
+ * mixes, a few idle days, and an open partial bucket recorded up to the
+ * render clock. Per-model $/request rates mirror the fixture's totals.
+ */
+function creditUsage() {
+  const DAY = 86_400_000;
+  const start = Date.parse("2026-10-01T00:00:00Z");
+  const counts = [
+    38, 74, 51, 0, 96, 118, 63, 0, 44, 132, 87, 115, 0, 58, 91, 126, 69, 0,
+    103, 84, 141, 62, 0, 89,
+  ];
+  const rates = {
+    "gpt-oss:120b": 0.0048,
+    "glm-5.3-flash": 0.0022,
+    "qwen3-coder:480b": 0.00083,
+  };
+  // Mix per weekday slot (i % 6): model share of the day's requests.
+  const mixes = [
+    { "gpt-oss:120b": 0.38, "glm-5.3-flash": 0.34 },
+    { "gpt-oss:120b": 0.55, "glm-5.3-flash": 0.45 },
+    { "gpt-oss:120b": 0.6, "qwen3-coder:480b": 0.4 },
+    { "glm-5.3-flash": 0.45, "qwen3-coder:480b": 0.55 },
+    { "gpt-oss:120b": 1 },
+    { "glm-5.3-flash": 1 },
+  ];
+  const buckets = counts.map((requestCount, i) => {
+    const from = new Date(start + i * DAY).toISOString();
+    const until = new Date(start + (i + 1) * DAY).toISOString();
+    if (requestCount === 0) {
+      return { from, until, request_count: 0 };
+    }
+    const mix = mixes[i % mixes.length];
+    let left = requestCount;
+    const names = Object.keys(mix);
+    const groups = names.map((model, gi) => {
+      const isLast = gi === names.length - 1;
+      const share = isLast ? left : Math.round(requestCount * mix[model]);
+      left -= share;
+      return {
+        model,
+        request_count: share,
+        usage_usd: Math.round(share * rates[model] * 100) / 100,
+        input_tokens: share * 150,
+        output_tokens: share * 45,
+      };
+    });
+    return {
+      from,
+      until,
+      request_count: requestCount,
+      usage_usd: groups.reduce((a, g) => a + g.usage_usd, 0),
+      input_tokens: groups.reduce((a, g) => a + g.input_tokens, 0),
+      output_tokens: groups.reduce((a, g) => a + g.output_tokens, 0),
+      groups,
+    };
+  });
+  // Open bucket: today, recorded up to the render clock (partial).
+  const todayGroups = [
+    { model: "gpt-oss:120b", request_count: 12 },
+    { model: "glm-5.3-flash", request_count: 22 },
+    { model: "qwen3-coder:480b", request_count: 18 },
+  ].map((g) => ({
+    ...g,
+    usage_usd: Math.round(g.request_count * rates[g.model] * 100) / 100,
+    input_tokens: g.request_count * 150,
+    output_tokens: g.request_count * 45,
+  }));
+  buckets.push({
+    from: new Date(start + counts.length * DAY).toISOString(),
+    until: LEGACY_NOW_ISO,
+    partial: true,
+    request_count: 52,
+    usage_usd: todayGroups.reduce((a, g) => a + g.usage_usd, 0),
+    input_tokens: todayGroups.reduce((a, g) => a + g.input_tokens, 0),
+    output_tokens: todayGroups.reduce((a, g) => a + g.output_tokens, 0),
+    groups: todayGroups,
+  });
+  return {
+    range: "30d",
+    scope: "self",
+    granularity: "day",
+    group_by: "model",
+    from: "2026-10-01T00:00:00Z",
     until: LEGACY_NOW_ISO,
     totals: { request_count: counts.reduce((a, b) => a + b, 0) + 52 },
     buckets,
@@ -107,16 +200,16 @@ function buildHtml({ balance, usage, now, fetchedAt, patch }) {
   });
 }
 
-const CREDITS_NOW = Date.parse("2026-10-15T15:00:00Z");
+const CREDITS_NOW = Date.parse("2026-10-25T10:18:00Z");
 
 const variants = [
   {
     file: "dashboard-credits.png",
     html: buildHtml({
       balance: creditsBalance,
-      usage: usage30d,
+      usage: creditUsage(),
       now: CREDITS_NOW,
-      fetchedAt: "2026-10-15T14:32:00Z",
+      fetchedAt: "2026-10-25T10:18:00Z",
       // The fixture's billing period closes in the past relative to the
       // render clock (it would read "Resets any moment now."); the capture
       // shows an in-flight period instead, like the tooltip preview does.
@@ -144,7 +237,7 @@ const variants = [
       // tooltip and the dashboard agree line for line.
       patch: (snap) => {
         snap.session.percentage = 69;
-        snap.session.resetsAt = "2026-10-23T12:00:00Z";
+        snap.session.resetsAt = "2026-10-25T12:00:00Z";
         snap.weekly.percentage = 18;
         snap.weekly.resetsAt = "2026-10-26T01:00:00Z";
       },
@@ -170,10 +263,13 @@ async function simulateHover(page, nonce) {
     const segs = Array.from(weekCard.querySelectorAll(".day-seg"));
     let target = null;
     for (const s of segs) {
-      const h = Number(s.getAttribute("data-h") ?? 0);
+      // Prefer the tallest GLM segment overall: a capture must SHOW the
+      // spotlight on the chart's dominant series, not on a small sliver.
       if (
         s.title.includes("glm-5.3-flash") &&
-        (!target || h > Number(target.getAttribute("data-h")))
+        (!target ||
+          Number(s.getAttribute("data-h") ?? 0) >
+            Number(target.getAttribute("data-h") ?? 0))
       ) {
         target = s;
       }
@@ -201,14 +297,17 @@ async function simulateHover(page, nonce) {
     const rect = target.getBoundingClientRect();
     const chip = document.createElement("div");
     chip.textContent = target.title;
+    // Anchored to the segment's top-right corner, opening leftwards: reads
+    // like a native tooltip next to the pointer without covering the
+    // column under the spotlight.
     chip.style.cssText =
       "position:absolute;background:#252526;" +
       "border:1px solid #454545;border-radius:3px;padding:2px 6px;" +
       "font-size:11px;line-height:1.4;color:#ccc;white-space:nowrap;" +
       "box-shadow:0 2px 8px rgba(0,0,0,.36);z-index:9;" +
-      "left:" + Math.round(rect.left - 8) + "px;" +
-      "top:" + Math.round(rect.top + 4) + "px;" +
-      "transform:translateX(-100%);";
+      "left:" + Math.round(rect.left + rect.width / 2) + "px;" +
+      "top:" + Math.round(rect.top - 28) + "px;" +
+      "transform:translateX(-90%);";
     document.body.appendChild(chip);
     return {
       segs: segs.length,

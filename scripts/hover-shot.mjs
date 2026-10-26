@@ -22,7 +22,7 @@ const { buildTooltipMarkdown } = require(
   path.join(root, "out", "ui", "tooltip.js"),
 );
 
-const NOW = Date.parse("2026-10-23T10:18:00Z");
+const NOW = Date.parse("2026-10-25T10:18:00Z");
 
 /** Legacy plan: the session is healthy (blue), the weekly window is close to
  * its limit (yellow at the default threshold), so the capture shows both
@@ -35,7 +35,7 @@ const snapshot = {
     limit: NaN,
     remaining: NaN,
     percentage: 69,
-    resetsAt: "2026-10-23T12:00:00Z",
+    resetsAt: "2026-10-25T12:00:00Z",
   },
   weekly: {
     used: NaN,
@@ -44,7 +44,7 @@ const snapshot = {
     percentage: 18,
     resetsAt: "2026-10-26T01:00:00Z",
   },
-  fetchedAt: "2026-10-23T10:18:00Z",
+  fetchedAt: "2026-10-25T10:18:00Z",
 };
 
 const md = buildTooltipMarkdown(snapshot, {
